@@ -219,6 +219,15 @@ function OpenOrderContent() {
               <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
                 Order #{order?.order_number || 'Loading...'}
               </h1>
+              {order?.firm && (
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                  order.firm === 'SLSA'
+                    ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                    : 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                }`}>
+                  Firm: {order.firm}
+                </span>
+              )}
               {order && (
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
                   {order.associate_status}
@@ -420,50 +429,115 @@ function OpenOrderContent() {
                     </span>
                   </div>
 
-                  {/* Dealer Current Credit Display */}
-                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-500 font-medium">Current Credit Balance</span>
+                  {/* LE Credit Display */}
+                  <div className={`p-3 rounded-xl border space-y-2 ${
+                    (order?.firm || 'LE') === 'LE'
+                      ? 'bg-indigo-50/70 border-indigo-200 ring-1 ring-indigo-300/60'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                        LE (Lakshmi Enterprises) Credit
+                      </span>
+                      {(order?.firm || 'LE') === 'LE' && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
+                          Active Order Firm
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60">
+                      <span className="text-slate-500 font-medium">LE Credit Balance</span>
                       <span className="font-bold font-mono text-slate-900 text-sm">
-                        ₹{(Number(dealer.current_credit) || 0).toLocaleString('en-IN', {
+                        ₹{(Number(dealer.le_credit ?? dealer.current_credit ?? 0)).toLocaleString('en-IN', {
                           minimumFractionDigits: 2,
                         })}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-500 font-medium">Credit Limit</span>
+                      <span className="text-slate-500 font-medium">LE Credit Limit</span>
                       <span className="font-medium font-mono text-slate-700">
-                        ₹{(Number(dealer.credit_limit) || 0).toLocaleString('en-IN', {
+                        ₹{(Number(dealer.le_credit_limit ?? dealer.credit_limit ?? 0)).toLocaleString('en-IN', {
                           minimumFractionDigits: 2,
                         })}
                       </span>
                     </div>
 
-                    {/* Remaining Available Credit Calculation */}
-                    <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
-                      <span className="text-slate-600 font-bold">Remaining Credit</span>
-                      <span
-                        className={`font-bold font-mono ${
-                          Number(dealer.credit_limit) - Number(dealer.current_credit) - grandTotal < 0
-                            ? 'text-red-600'
-                            : 'text-emerald-600'
-                        }`}
-                      >
+                    <div className="pt-1.5 border-t border-slate-200/80 flex items-center justify-between text-xs">
+                      <span className="text-slate-600 font-semibold">Available LE Credit</span>
+                      <span className="font-bold font-mono text-emerald-700">
                         ₹{(
-                          Number(dealer.credit_limit) - Number(dealer.current_credit)
+                          Math.max(0, Number(dealer.le_credit_limit ?? dealer.credit_limit ?? 0) - Number(dealer.le_credit ?? dealer.current_credit ?? 0))
                         ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
 
-                  {/* Credit warning indicator if exceeding limit */}
-                  {Number(dealer.current_credit) + grandTotal > Number(dealer.credit_limit) && (
-                    <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>Notice: Approving this order will exceed the dealer&apos;s set credit limit.</span>
+                  {/* SLSA Credit Display */}
+                  <div className={`p-3 rounded-xl border space-y-2 ${
+                    order?.firm === 'SLSA'
+                      ? 'bg-purple-50/70 border-purple-200 ring-1 ring-purple-300/60'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-purple-600"></span>
+                        SLSA Credit
+                      </span>
+                      {order?.firm === 'SLSA' && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
+                          Active Order Firm
+                        </span>
+                      )}
                     </div>
-                  )}
+
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60">
+                      <span className="text-slate-500 font-medium">SLSA Credit Balance</span>
+                      <span className="font-bold font-mono text-slate-900 text-sm">
+                        ₹{(Number(dealer.slsa_credit ?? 0)).toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                        })}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500 font-medium">SLSA Credit Limit</span>
+                      <span className="font-medium font-mono text-slate-700">
+                        ₹{(Number(dealer.slsa_credit_limit ?? 0)).toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                        })}
+                      </span>
+                    </div>
+
+                    <div className="pt-1.5 border-t border-slate-200/80 flex items-center justify-between text-xs">
+                      <span className="text-slate-600 font-semibold">Available SLSA Credit</span>
+                      <span className="font-bold font-mono text-emerald-700">
+                        ₹{(
+                          Math.max(0, Number(dealer.slsa_credit_limit ?? 0) - Number(dealer.slsa_credit ?? 0))
+                        ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Credit warning indicator if exceeding limit for the active firm */}
+                  {(() => {
+                    const isSLSA = order?.firm === 'SLSA';
+                    const activeCredit = Number(isSLSA ? dealer.slsa_credit : (dealer.le_credit ?? dealer.current_credit)) || 0;
+                    const activeLimit = Number(isSLSA ? dealer.slsa_credit_limit : (dealer.le_credit_limit ?? dealer.credit_limit)) || 0;
+                    if (activeLimit > 0 && activeCredit + grandTotal > activeLimit) {
+                      return (
+                        <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>
+                            Notice: Approving this order will exceed the dealer&apos;s set <strong>{isSLSA ? 'SLSA' : 'LE'}</strong> credit limit.
+                          </span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
               ) : (
                 <div className="text-xs text-slate-400 italic">No specific dealer info loaded.</div>

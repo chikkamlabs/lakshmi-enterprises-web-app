@@ -24,8 +24,10 @@ function EditDealerForm() {
   const [mobile, setMobile] = useState('');
   const [shopName, setShopName] = useState('');
   const [address, setAddress] = useState('');
-  const [currentCredit, setCurrentCredit] = useState('0');
-  const [creditLimit, setCreditLimit] = useState('0');
+  const [leCredit, setLeCredit] = useState('0');
+  const [leCreditLimit, setLeCreditLimit] = useState('0');
+  const [slsaCredit, setSlsaCredit] = useState('0');
+  const [slsaCreditLimit, setSlsaCreditLimit] = useState('0');
   const [status, setStatus] = useState(true);
 
   useEffect(() => {
@@ -57,8 +59,10 @@ function EditDealerForm() {
             setMobile(dealer.mobile || '');
             setShopName(dealer.shop_name || '');
             setAddress(dealer.address || '');
-            setCurrentCredit(String(dealer.current_credit ?? 0));
-            setCreditLimit(String(dealer.credit_limit ?? 0));
+            setLeCredit(String(dealer.le_credit ?? dealer.current_credit ?? 0));
+            setLeCreditLimit(String(dealer.le_credit_limit ?? dealer.credit_limit ?? 0));
+            setSlsaCredit(String(dealer.slsa_credit ?? 0));
+            setSlsaCreditLimit(String(dealer.slsa_credit_limit ?? 0));
             setStatus(dealer.status ?? true);
           } else {
             setError('Dealer record not found in database.');
@@ -107,8 +111,10 @@ function EditDealerForm() {
         mobile: mobile.trim() || null,
         shop_name: shopName.trim() || null,
         address: address.trim() || null,
-        current_credit: Number(currentCredit) || 0,
-        credit_limit: Number(creditLimit) || 0,
+        le_credit: Number(leCredit) || 0,
+        le_credit_limit: Number(leCreditLimit) || 0,
+        slsa_credit: Number(slsaCredit) || 0,
+        slsa_credit_limit: Number(slsaCreditLimit) || 0,
         status: status,
       });
 
@@ -260,35 +266,85 @@ function EditDealerForm() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="editCurrentCredit" className="form-label font-semibold text-slate-700 block mb-1">
-                  Current Credit (₹)
-                </label>
-                <input
-                  id="editCurrentCredit"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={currentCredit}
-                  onChange={(e) => setCurrentCredit(e.target.value)}
-                  className="form-input w-full rounded-lg border-slate-300 font-bold"
-                />
+            {/* LE Firm Credit Section */}
+            <div className="p-4 bg-indigo-50/40 rounded-xl border border-indigo-100 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-900">
+                  LE (Lakshmi Enterprises) Credit Configuration
+                </h3>
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="editLeCredit" className="form-label font-semibold text-slate-700 block mb-1">
+                    LE Credit Balance (₹)
+                  </label>
+                  <input
+                    id="editLeCredit"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={leCredit}
+                    onChange={(e) => setLeCredit(e.target.value)}
+                    className="form-input w-full rounded-lg border-slate-300 font-bold text-indigo-950 bg-white"
+                  />
+                </div>
 
-              <div>
-                <label htmlFor="editCreditLimit" className="form-label font-semibold text-slate-700 block mb-1">
-                  Credit Limit (₹)
-                </label>
-                <input
-                  id="editCreditLimit"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={creditLimit}
-                  onChange={(e) => setCreditLimit(e.target.value)}
-                  className="form-input w-full rounded-lg border-slate-300"
-                />
+                <div>
+                  <label htmlFor="editLeCreditLimit" className="form-label font-semibold text-slate-700 block mb-1">
+                    LE Credit Limit (₹)
+                  </label>
+                  <input
+                    id="editLeCreditLimit"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={leCreditLimit}
+                    onChange={(e) => setLeCreditLimit(e.target.value)}
+                    className="form-input w-full rounded-lg border-slate-300 bg-white"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* SLSA Firm Credit Section */}
+            <div className="p-4 bg-purple-50/40 rounded-xl border border-purple-100 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-purple-600"></span>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-purple-900">
+                  SLSA Credit Configuration
+                </h3>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="editSlsaCredit" className="form-label font-semibold text-slate-700 block mb-1">
+                    SLSA Credit Balance (₹)
+                  </label>
+                  <input
+                    id="editSlsaCredit"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={slsaCredit}
+                    onChange={(e) => setSlsaCredit(e.target.value)}
+                    className="form-input w-full rounded-lg border-slate-300 font-bold text-purple-950 bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="editSlsaCreditLimit" className="form-label font-semibold text-slate-700 block mb-1">
+                    SLSA Credit Limit (₹)
+                  </label>
+                  <input
+                    id="editSlsaCreditLimit"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={slsaCreditLimit}
+                    onChange={(e) => setSlsaCreditLimit(e.target.value)}
+                    className="form-input w-full rounded-lg border-slate-300 bg-white"
+                  />
+                </div>
               </div>
             </div>
 

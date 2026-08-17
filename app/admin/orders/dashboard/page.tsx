@@ -32,15 +32,25 @@ import {
   PackageX,
   AlertTriangle,
   Layers,
+  Building,
 } from 'lucide-react';
+
+const getTodayDateString = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 function OrdersDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Filter States (Associate Status removed from filters, fixed to 'Submitted')
-  const [fromDate, setFromDate] = useState<string>(searchParams?.get('from') || '');
-  const [toDate, setToDate] = useState<string>(searchParams?.get('to') || '');
+  // Filter States (Firm option added, dates default to today)
+  const [fromDate, setFromDate] = useState<string>(searchParams?.get('from') ?? getTodayDateString());
+  const [toDate, setToDate] = useState<string>(searchParams?.get('to') ?? getTodayDateString());
+  const [firm, setFirm] = useState<string>(searchParams?.get('firm') || 'ALL');
   const [approvingStatus, setApprovingStatus] = useState<string>('ALL');
   const [packingStatus, setPackingStatus] = useState<string>('ALL');
   const [selectedDealerId, setSelectedDealerId] = useState<string>('ALL');
@@ -97,6 +107,7 @@ function OrdersDashboardContent() {
       setError('');
       try {
         const filters: OrderFilters = {
+          firm,
           fromDate: fromDate || undefined,
           toDate: toDate || undefined,
           associateStatus: 'Submitted', // ALWAYS filter submitted orders only
@@ -130,7 +141,7 @@ function OrdersDashboardContent() {
     return () => {
       isMounted = false;
     };
-  }, [fromDate, toDate, approvingStatus, packingStatus, selectedDealerId, selectedAssociateId, refreshKey]);
+  }, [firm, fromDate, toDate, approvingStatus, packingStatus, selectedDealerId, selectedAssociateId, refreshKey]);
 
   // Client-side text search
   const filteredOrders = useMemo(() => {
@@ -143,13 +154,15 @@ function OrdersDashboardContent() {
       const associate = (o.associate?.name || '').toLowerCase();
       const packedBy = (o.packed_by_profile?.name || '').toLowerCase();
       const notes = (o.notes || '').toLowerCase();
+      const firmStr = (o.firm || 'LE').toLowerCase();
 
       return (
         num.includes(q) ||
         dealer.includes(q) ||
         associate.includes(q) ||
         packedBy.includes(q) ||
-        notes.includes(q)
+        notes.includes(q) ||
+        firmStr.includes(q)
       );
     });
   }, [orders, searchQuery]);
@@ -160,8 +173,9 @@ function OrdersDashboardContent() {
   }, [filteredOrders]);
 
   const clearFilters = () => {
-    setFromDate('');
-    setToDate('');
+    setFromDate(getTodayDateString());
+    setToDate(getTodayDateString());
+    setFirm('ALL');
     setApprovingStatus('ALL');
     setPackingStatus('ALL');
     setSelectedDealerId('ALL');
@@ -296,6 +310,20 @@ function OrdersDashboardContent() {
 
         {/* Filter Inputs Grid with Sub-borders */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {/* Firm Select Dropdown */}
+          <div className="bg-slate-50/70 border border-slate-200/90 rounded-xl p-3 hover:border-slate-300 focus-within:border-indigo-500 focus-within:bg-white transition-all space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 block">Firm</label>
+            <select
+              value={firm}
+              onChange={(e) => setFirm(e.target.value)}
+              className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+            >
+              <option value="ALL">All Firms (LE &amp; SLSA)</option>
+              <option value="LE">LE (Lakshmi Enterprises)</option>
+              <option value="SLSA">SLSA</option>
+            </select>
+          </div>
+
           {/* Date From */}
           <div className="bg-slate-50/70 border border-slate-200/90 rounded-xl p-3 hover:border-slate-300 focus-within:border-indigo-500 focus-within:bg-white transition-all space-y-1.5">
             <label className="text-xs font-semibold text-slate-700 block">From Date</label>
@@ -389,13 +417,13 @@ function OrdersDashboardContent() {
           </div>
 
           {/* Search Bar */}
-          <div className="sm:col-span-2 xl:col-span-2 bg-slate-50/70 border border-slate-200/90 rounded-xl p-3 hover:border-slate-300 focus-within:border-indigo-500 focus-within:bg-white transition-all space-y-1.5">
+          <div className="bg-slate-50/70 border border-slate-200/90 rounded-xl p-3 hover:border-slate-300 focus-within:border-indigo-500 focus-within:bg-white transition-all space-y-1.5">
             <label className="text-xs font-semibold text-slate-700 block">Search Keywords</label>
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search order #, dealer name, associate, notes..."
+                placeholder="Search order #, dealer, associate, firm..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
@@ -439,6 +467,7 @@ function OrdersDashboardContent() {
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-200/90 text-xs font-semibold text-slate-600 uppercase tracking-wider">
                     <th className="py-4 px-5">Order # &amp; Date</th>
+                    <th className="py-4 px-5">Firm</th>
                     <th className="py-4 px-5">Dealer Name</th>
                     <th className="py-4 px-5">Associate</th>
                     <th className="py-4 px-5 text-center">No. of Items</th>
@@ -468,6 +497,17 @@ function OrdersDashboardContent() {
                               : 'N/A'}
                           </span>
                         </div>
+                      </td>
+
+                      {/* Firm Column */}
+                      <td className="py-4 px-5">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold ${
+                          order.firm === 'SLSA'
+                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                            : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                        }`}>
+                          {order.firm || 'LE'}
+                        </span>
                       </td>
 
                       {/* Dealer Name */}
@@ -556,9 +596,18 @@ function OrdersDashboardContent() {
                 <div key={order.id} className="p-4 space-y-3 bg-white">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <span className="font-bold font-mono text-indigo-600 text-sm">
-                        {order.order_number}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold font-mono text-indigo-600 text-sm">
+                          {order.order_number}
+                        </span>
+                        <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                          order.firm === 'SLSA'
+                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                            : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                        }`}>
+                          {order.firm || 'LE'}
+                        </span>
+                      </div>
                       <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                         <Calendar className="w-3 h-3" />
                         <span>

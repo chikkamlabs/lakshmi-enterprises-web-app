@@ -26,6 +26,7 @@ export default function AssociateOrdersPage() {
   const [loading, setLoading] = useState<boolean>(true);
 
   // Filters state
+  const [firmFilter, setFirmFilter] = useState<string>('ALL');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -57,6 +58,7 @@ export default function AssociateOrdersPage() {
       setLoading(true);
       try {
         const data = await getAssociateOrdersList({
+          firm: firmFilter,
           startDate: startDate || undefined,
           endDate: endDate || undefined,
           search: searchQuery || undefined,
@@ -83,6 +85,7 @@ export default function AssociateOrdersPage() {
       isMounted = false;
     };
   }, [
+    firmFilter,
     startDate,
     endDate,
     searchQuery,
@@ -198,7 +201,7 @@ export default function AssociateOrdersPage() {
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors ${
-                showFilters || startDate || endDate || selectedDealerId !== 'ALL' || associateStatusFilter !== 'ALL' || approvingStatusFilter !== 'ALL' || packingStatusFilter !== 'ALL'
+                showFilters || firmFilter !== 'ALL' || startDate || endDate || selectedDealerId !== 'ALL' || associateStatusFilter !== 'ALL' || approvingStatusFilter !== 'ALL' || packingStatusFilter !== 'ALL'
                   ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
                   : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
@@ -260,9 +263,23 @@ export default function AssociateOrdersPage() {
             </div>
           </div>
 
-          {/* Collapsible Extended Filters (Dealer & Status Filters) */}
-          {(showFilters || selectedDealerId !== 'ALL' || associateStatusFilter !== 'ALL' || approvingStatusFilter !== 'ALL' || packingStatusFilter !== 'ALL') && (
-            <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs animate-fade-in">
+          {/* Collapsible Extended Filters (Firm, Dealer & Status Filters) */}
+          {(showFilters || firmFilter !== 'ALL' || selectedDealerId !== 'ALL' || associateStatusFilter !== 'ALL' || approvingStatusFilter !== 'ALL' || packingStatusFilter !== 'ALL') && (
+            <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs animate-fade-in">
+              {/* Firm Type Filter */}
+              <div>
+                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Firm Type</label>
+                <select
+                  value={firmFilter}
+                  onChange={(e) => setFirmFilter(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-md text-xs px-2 py-1 focus:outline-none focus:border-indigo-500 font-semibold"
+                >
+                  <option value="ALL">All Firms</option>
+                  <option value="LE">LE (Lakshmi Enterprises)</option>
+                  <option value="SLSA">SLSA</option>
+                </select>
+              </div>
+
               {/* Dealer Filter */}
               <div>
                 <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Select Dealer</label>
@@ -325,10 +342,11 @@ export default function AssociateOrdersPage() {
               </div>
 
               {/* Clear Filters Button */}
-              <div className="sm:col-span-2 lg:col-span-4 flex justify-end pt-1">
+              <div className="sm:col-span-2 lg:col-span-5 flex justify-end pt-1">
                 <button
                   type="button"
                   onClick={() => {
+                    setFirmFilter('ALL');
                     setStartDate('');
                     setEndDate('');
                     setSearchQuery('');
@@ -376,6 +394,7 @@ export default function AssociateOrdersPage() {
                 order.approving_status === 'Fully Approved';
 
               const isPendingApproval = order.approving_status === 'Pending';
+              const isSlsa = order.firm === 'SLSA';
 
               return (
                 <Link
@@ -386,9 +405,18 @@ export default function AssociateOrdersPage() {
                   <div className="flex items-start justify-between gap-2">
                     {/* Order ID & Dealer */}
                     <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-xs font-bold text-slate-900 font-mono">
                           {order.order_number || order.id}
+                        </span>
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold border ${
+                            isSlsa
+                              ? 'bg-purple-50 text-purple-700 border-purple-200'
+                              : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                          }`}
+                        >
+                          {order.firm || 'LE'}
                         </span>
                         {isPendingApproval ? (
                           <span className="inline-flex items-center text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded font-medium">

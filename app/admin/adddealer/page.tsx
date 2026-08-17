@@ -14,13 +14,15 @@ export default function AddDealerPage() {
   const [success, setSuccess] = useState('');
 
   // Form states
-  const [dealerCode, setDealerCode] = useState('DLR-1001');
+  const [dealerCode, setDealerCode] = useState('DLR-101');
   const [name, setName] = useState('');
   const [mobile, setMobile] = useState('');
   const [shopName, setShopName] = useState('');
   const [address, setAddress] = useState('');
-  const [currentCredit, setCurrentCredit] = useState('0');
-  const [creditLimit, setCreditLimit] = useState('0');
+  const [leCredit, setLeCredit] = useState('0');
+  const [leCreditLimit, setLeCreditLimit] = useState('0');
+  const [slsaCredit, setSlsaCredit] = useState('0');
+  const [slsaCreditLimit, setSlsaCreditLimit] = useState('0');
   const [status, setStatus] = useState(true);
 
   // Auto-generate code
@@ -28,7 +30,7 @@ export default function AddDealerPage() {
     let isMounted = true;
     getStoredDealers().then((dealers) => {
       if (isMounted && dealers.length > 0) {
-        setDealerCode(`DLR-${1001 + dealers.length}`);
+        setDealerCode(`DLR-${101 + dealers.length}`);
       }
     });
     return () => {
@@ -58,8 +60,10 @@ export default function AddDealerPage() {
         mobile: mobile.trim() || null,
         shop_name: shopName.trim() || null,
         address: address.trim() || null,
-        current_credit: Number(currentCredit) || 0,
-        credit_limit: Number(creditLimit) || 0,
+        le_credit: Number(leCredit) || 0,
+        le_credit_limit: Number(leCreditLimit) || 0,
+        slsa_credit: Number(slsaCredit) || 0,
+        slsa_credit_limit: Number(slsaCreditLimit) || 0,
         status: status,
       });
 
@@ -148,7 +152,7 @@ export default function AddDealerPage() {
                     value={dealerCode}
                     onChange={(e) => setDealerCode(e.target.value)}
                     className="form-input w-full rounded-lg border-slate-300 font-mono"
-                    placeholder="e.g. DLR-1001"
+                    placeholder="e.g. DLR-101"
                   />
                 </div>
 
@@ -198,37 +202,89 @@ export default function AddDealerPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="currentCredit" className="form-label font-semibold text-slate-700 block mb-1">
-                    Current Credit (₹)
-                  </label>
-                  <input
-                    id="currentCredit"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={currentCredit}
-                    onChange={(e) => setCurrentCredit(e.target.value)}
-                    className="form-input w-full rounded-lg border-slate-300 font-bold"
-                    placeholder="0.00"
-                  />
+              {/* LE Firm Credit Section */}
+              <div className="p-4 bg-indigo-50/40 rounded-xl border border-indigo-100 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-900">
+                    LE (Lakshmi Enterprises) Credit Configuration
+                  </h3>
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="leCredit" className="form-label font-semibold text-slate-700 block mb-1">
+                      LE Initial Credit (₹)
+                    </label>
+                    <input
+                      id="leCredit"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={leCredit}
+                      onChange={(e) => setLeCredit(e.target.value)}
+                      className="form-input w-full rounded-lg border-slate-300 font-bold text-indigo-950 bg-white"
+                      placeholder="0.00"
+                    />
+                  </div>
 
-                <div>
-                  <label htmlFor="creditLimit" className="form-label font-semibold text-slate-700 block mb-1">
-                    Credit Limit (₹)
-                  </label>
-                  <input
-                    id="creditLimit"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={creditLimit}
-                    onChange={(e) => setCreditLimit(e.target.value)}
-                    className="form-input w-full rounded-lg border-slate-300"
-                    placeholder="0.00"
-                  />
+                  <div>
+                    <label htmlFor="leCreditLimit" className="form-label font-semibold text-slate-700 block mb-1">
+                      LE Credit Limit (₹)
+                    </label>
+                    <input
+                      id="leCreditLimit"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={leCreditLimit}
+                      onChange={(e) => setLeCreditLimit(e.target.value)}
+                      className="form-input w-full rounded-lg border-slate-300 bg-white"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SLSA Firm Credit Section */}
+              <div className="p-4 bg-purple-50/40 rounded-xl border border-purple-100 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-purple-600"></span>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-purple-900">
+                    SLSA Credit Configuration
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="slsaCredit" className="form-label font-semibold text-slate-700 block mb-1">
+                      SLSA Initial Credit (₹)
+                    </label>
+                    <input
+                      id="slsaCredit"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={slsaCredit}
+                      onChange={(e) => setSlsaCredit(e.target.value)}
+                      className="form-input w-full rounded-lg border-slate-300 font-bold text-purple-950 bg-white"
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="slsaCreditLimit" className="form-label font-semibold text-slate-700 block mb-1">
+                      SLSA Credit Limit (₹)
+                    </label>
+                    <input
+                      id="slsaCreditLimit"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={slsaCreditLimit}
+                      onChange={(e) => setSlsaCreditLimit(e.target.value)}
+                      className="form-input w-full rounded-lg border-slate-300 bg-white"
+                      placeholder="0.00"
+                    />
+                  </div>
                 </div>
               </div>
 

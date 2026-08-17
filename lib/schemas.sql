@@ -21,6 +21,13 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- SECTION 1: CUSTOM ENUM TYPES
 -- ============================================================================
 
+-- Firm Type in the ERP (LE & SLSA)
+DO $$ BEGIN
+    CREATE TYPE public.firm_type AS ENUM ('LE', 'SLSA');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
 -- User Roles in the ERP
 DO $$ BEGIN
     CREATE TYPE public.user_role AS ENUM ('admin', 'associate', 'staff');
@@ -177,8 +184,10 @@ CREATE TABLE IF NOT EXISTS public.dealers (
     mobile TEXT,
     shop_name TEXT,
     address TEXT,
-    current_credit NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
-    credit_limit NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    le_credit NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    slsa_credit NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    le_credit_limit NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    slsa_credit_limit NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     status BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -190,6 +199,7 @@ CREATE TABLE IF NOT EXISTS public.dealers (
 CREATE TABLE IF NOT EXISTS public.dealer_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     dealer_id UUID NOT NULL REFERENCES public.dealers(id) ON DELETE CASCADE,
+    firm public.firm_type NOT NULL DEFAULT 'LE',
     transaction_type public.transaction_type NOT NULL,
     amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     reason TEXT,
@@ -227,6 +237,7 @@ CREATE TABLE IF NOT EXISTS public.products (
 CREATE TABLE IF NOT EXISTS public.orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_number TEXT UNIQUE NOT NULL,
+    firm public.firm_type NOT NULL DEFAULT 'LE',
     dealer_id UUID NOT NULL REFERENCES public.dealers(id) ON DELETE RESTRICT,
     associate_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     packed_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
@@ -392,6 +403,8 @@ CREATE INDEX IF NOT EXISTS idx_dealers_code ON public.dealers(dealer_code);
 CREATE INDEX IF NOT EXISTS idx_dealers_name ON public.dealers(name);
 
 CREATE INDEX IF NOT EXISTS idx_dealer_transactions_dealer_id ON public.dealer_transactions(dealer_id);
+CREATE INDEX IF NOT EXISTS idx_dealer_transactions_firm ON public.dealer_transactions(firm);
+CREATE INDEX IF NOT EXISTS idx_dealer_transactions_dealer_firm ON public.dealer_transactions(dealer_id, firm);
 CREATE INDEX IF NOT EXISTS idx_dealer_transactions_created_by ON public.dealer_transactions(created_by);
 
 CREATE INDEX IF NOT EXISTS idx_products_code ON public.products(product_code);
@@ -401,6 +414,7 @@ CREATE INDEX IF NOT EXISTS idx_products_company_id ON public.products(company_id
 CREATE INDEX IF NOT EXISTS idx_products_category_id ON public.products(category_id);
 
 CREATE INDEX IF NOT EXISTS idx_orders_number ON public.orders(order_number);
+CREATE INDEX IF NOT EXISTS idx_orders_firm ON public.orders(firm);
 CREATE INDEX IF NOT EXISTS idx_orders_dealer_id ON public.orders(dealer_id);
 CREATE INDEX IF NOT EXISTS idx_orders_associate_id ON public.orders(associate_id);
 CREATE INDEX IF NOT EXISTS idx_orders_packed_by ON public.orders(packed_by);

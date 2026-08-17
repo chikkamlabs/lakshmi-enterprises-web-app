@@ -20,6 +20,7 @@ import {
   ShoppingBag,
   Minus,
   Lock,
+  Building,
 } from 'lucide-react';
 import {
   getDealersForOrder,
@@ -50,6 +51,9 @@ function CreateOrderContent() {
   const [existingOrderNumber, setExistingOrderNumber] = useState<string>('');
   const [approvingStatus, setApprovingStatus] = useState<string>('Pending');
   const [loadingOrder, setLoadingOrder] = useState<boolean>(false);
+
+  // State: Firm Selection ('LE' or 'SLSA')
+  const [selectedFirm, setSelectedFirm] = useState<'LE' | 'SLSA'>('LE');
 
   // State: Dealers
   const [dealers, setDealers] = useState<Dealer[]>([]);
@@ -131,6 +135,9 @@ function CreateOrderContent() {
           setApprovingStatus(result.order.approving_status || 'Pending');
           setIsReadOnly(!result.editable);
           setNotes(result.order.notes || '');
+          if (result.order.firm) {
+            setSelectedFirm(result.order.firm === 'SLSA' ? 'SLSA' : 'LE');
+          }
 
           if (result.dealer) {
             setSelectedDealer(result.dealer);
@@ -264,6 +271,7 @@ function CreateOrderContent() {
       if (isEditing && editOrderId) {
         // Update existing order
         const result = await updateOrderInDatabase(editOrderId, {
+          firm: selectedFirm,
           dealer_id: selectedDealer.id,
           associate_status: associateStatus,
           notes: notes.trim() || undefined,
@@ -286,6 +294,7 @@ function CreateOrderContent() {
       } else {
         // Save new order
         const result = await saveOrderToDatabase({
+          firm: selectedFirm,
           dealer_id: selectedDealer.id,
           associate_status: associateStatus,
           notes: notes.trim() || undefined,
@@ -412,6 +421,72 @@ function CreateOrderContent() {
             </button>
           </div>
         )}
+
+        {/* 0. Select Firm Card */}
+        <section className="bg-white rounded-lg border border-slate-200 p-3 shadow-xs space-y-2.5">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+            <div className="flex items-center gap-2">
+              <Building className="w-4 h-4 text-indigo-600" />
+              <div>
+                <h2 className="text-xs font-bold text-slate-900">Select Firm</h2>
+                <p className="text-[10px] text-slate-500">Choose the operating firm for this order</p>
+              </div>
+            </div>
+            <span className="badge badge-info text-[10px] font-bold">
+              {selectedFirm === 'LE' ? 'Lakshmi Enterprises' : 'SLSA'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 pt-0.5">
+            <button
+              type="button"
+              disabled={isReadOnly}
+              onClick={() => setSelectedFirm('LE')}
+              className={`p-2.5 rounded-lg border text-left transition-all flex items-center justify-between ${
+                selectedFirm === 'LE'
+                  ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 ring-1 ring-indigo-500 shadow-xs'
+                  : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100 text-slate-700'
+              } ${isReadOnly ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              <div className="min-w-0">
+                <div className="text-xs font-bold flex items-center gap-1.5">
+                  <span>LE</span>
+                  {selectedFirm === 'LE' && <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />}
+                </div>
+                <div className="text-[10px] text-slate-500 truncate mt-0.5">Lakshmi Enterprises</div>
+              </div>
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                selectedFirm === 'LE' ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
+              }`}>
+                LE
+              </span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isReadOnly}
+              onClick={() => setSelectedFirm('SLSA')}
+              className={`p-2.5 rounded-lg border text-left transition-all flex items-center justify-between ${
+                selectedFirm === 'SLSA'
+                  ? 'border-purple-600 bg-purple-50/70 text-purple-950 ring-1 ring-purple-500 shadow-xs'
+                  : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100 text-slate-700'
+              } ${isReadOnly ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              <div className="min-w-0">
+                <div className="text-xs font-bold flex items-center gap-1.5">
+                  <span>SLSA</span>
+                  {selectedFirm === 'SLSA' && <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />}
+                </div>
+                <div className="text-[10px] text-slate-500 truncate mt-0.5">SLSA Firm</div>
+              </div>
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                selectedFirm === 'SLSA' ? 'bg-purple-600 text-white' : 'bg-slate-200 text-slate-600'
+              }`}>
+                SLSA
+              </span>
+            </button>
+          </div>
+        </section>
 
         {/* 1. Select Dealer Card */}
         <section className="bg-white rounded-lg border border-slate-200 p-3 shadow-xs space-y-2.5">

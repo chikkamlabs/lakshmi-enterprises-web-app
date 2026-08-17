@@ -64,10 +64,14 @@ export default function AdminDealersDashboardPage() {
     };
   }, []);
 
-  // Compute metrics: Total Dealers & Total Credit (Sum of dealers.current_credit)
+  // Compute metrics: Total Dealers & Total Credits (LE Credit and SLSA Credit)
   const totalDealers = dealers.length;
-  const totalCredit = useMemo(() => {
-    return dealers.reduce((sum, dealer) => sum + (Number(dealer.current_credit) || 0), 0);
+  const totalLeCredit = useMemo(() => {
+    return dealers.reduce((sum, dealer) => sum + (Number(dealer.le_credit ?? dealer.current_credit) || 0), 0);
+  }, [dealers]);
+
+  const totalSlsaCredit = useMemo(() => {
+    return dealers.reduce((sum, dealer) => sum + (Number(dealer.slsa_credit) || 0), 0);
   }, [dealers]);
 
   // Filter dealers
@@ -100,7 +104,7 @@ export default function AdminDealersDashboardPage() {
                 <span>Dealers Management</span>
               </h1>
               <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                Monitor dealer accounts, credit balances, and store details.
+                Monitor dealer accounts, firm-specific credit balances, and store details.
               </p>
             </div>
 
@@ -132,8 +136,8 @@ export default function AdminDealersDashboardPage() {
           )}
 
           {/* Metrics Overview Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Card 1: Total Dealers (Count) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Card 1: Total Dealers */}
             <div className="card-base bg-white border border-slate-200 shadow-xs p-5 flex items-center justify-between rounded-xl">
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -144,24 +148,47 @@ export default function AdminDealersDashboardPage() {
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">Registered dealer network</p>
               </div>
-              <div className="w-12 h-12 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+              <div className="w-12 h-12 bg-slate-100 border border-slate-200 text-slate-700 rounded-xl flex items-center justify-center shrink-0">
                 <Store className="w-6 h-6" />
               </div>
             </div>
 
-            {/* Card 2: Total Credit (Sum of current_credit) */}
-            <div className="card-base bg-white border border-slate-200 shadow-xs p-5 flex items-center justify-between rounded-xl">
+            {/* Card 2: Total LE Credit */}
+            <div className="card-base bg-white border border-indigo-100 shadow-xs p-5 flex items-center justify-between rounded-xl ring-1 ring-indigo-500/10">
               <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Total Credit
-                </p>
-                <h3 className="text-2xl sm:text-3xl font-extrabold text-indigo-700 mt-1 flex items-center">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                  <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wider">
+                    Total LE Credit
+                  </p>
+                </div>
+                <h3 className="text-2xl sm:text-3xl font-extrabold text-indigo-900 mt-1 flex items-center">
                   <span className="text-lg font-bold mr-0.5">₹</span>
-                  {isLoading ? '...' : totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  {isLoading ? '...' : totalLeCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </h3>
-                <p className="text-xs text-slate-400 mt-1">Sum of all dealers.current_credit</p>
+                <p className="text-xs text-indigo-500/80 mt-1">Lakshmi Enterprises credit sum</p>
               </div>
-              <div className="w-12 h-12 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center shrink-0">
+              <div className="w-12 h-12 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+                <CreditCard className="w-6 h-6" />
+              </div>
+            </div>
+
+            {/* Card 3: Total SLSA Credit */}
+            <div className="card-base bg-white border border-purple-100 shadow-xs p-5 flex items-center justify-between rounded-xl ring-1 ring-purple-500/10">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-purple-600"></span>
+                  <p className="text-xs font-semibold text-purple-700 uppercase tracking-wider">
+                    Total SLSA Credit
+                  </p>
+                </div>
+                <h3 className="text-2xl sm:text-3xl font-extrabold text-purple-900 mt-1 flex items-center">
+                  <span className="text-lg font-bold mr-0.5">₹</span>
+                  {isLoading ? '...' : totalSlsaCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </h3>
+                <p className="text-xs text-purple-500/80 mt-1">SLSA firm credit sum</p>
+              </div>
+              <div className="w-12 h-12 bg-purple-50 border border-purple-100 text-purple-600 rounded-xl flex items-center justify-center shrink-0">
                 <CreditCard className="w-6 h-6" />
               </div>
             </div>
@@ -220,7 +247,8 @@ export default function AdminDealersDashboardPage() {
                         <th className="py-3.5 px-4">Dealer</th>
                         <th className="py-3.5 px-4">Shop Name</th>
                         <th className="py-3.5 px-4">Mobile</th>
-                        <th className="py-3.5 px-4">Credit Balance</th>
+                        <th className="py-3.5 px-4">LE Credit</th>
+                        <th className="py-3.5 px-4">SLSA Credit</th>
                         <th className="py-3.5 px-4">Status</th>
                         <th className="py-3.5 px-4 text-right">Actions</th>
                       </tr>
@@ -245,8 +273,25 @@ export default function AdminDealersDashboardPage() {
                               <span className="text-slate-400 italic">-</span>
                             )}
                           </td>
-                          <td className="py-3.5 px-4 font-bold text-slate-900">
-                            ₹{(Number(dealer.current_credit) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          <td className="py-3.5 px-4 font-bold text-indigo-950">
+                            <div>
+                              ₹{(Number(dealer.le_credit ?? dealer.current_credit ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </div>
+                            {(dealer.le_credit_limit || dealer.credit_limit) ? (
+                              <div className="text-[10px] text-slate-400 font-normal">
+                                Limit: ₹{Number(dealer.le_credit_limit ?? dealer.credit_limit).toLocaleString('en-IN')}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td className="py-3.5 px-4 font-bold text-purple-950">
+                            <div>
+                              ₹{(Number(dealer.slsa_credit ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </div>
+                            {dealer.slsa_credit_limit ? (
+                              <div className="text-[10px] text-slate-400 font-normal">
+                                Limit: ₹{Number(dealer.slsa_credit_limit).toLocaleString('en-IN')}
+                              </div>
+                            ) : null}
                           </td>
                           <td className="py-3.5 px-4">
                             {dealer.status ? (
@@ -306,17 +351,20 @@ export default function AdminDealersDashboardPage() {
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                        <div>
-                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Credit Balance</span>
-                          <span className="font-extrabold text-slate-900 text-sm">
-                            ₹{(Number(dealer.current_credit) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        <div className="p-2 bg-indigo-50/60 rounded border border-indigo-100">
+                          <span className="text-indigo-700 block text-[10px] uppercase font-bold">LE Credit</span>
+                          <span className="font-extrabold text-indigo-950 text-sm">
+                            ₹{(Number(dealer.le_credit ?? dealer.current_credit ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </span>
                         </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Mobile</span>
-                          <span className="font-medium text-slate-700">
-                            {dealer.mobile || '-'}
+                        <div className="p-2 bg-purple-50/60 rounded border border-purple-100">
+                          <span className="text-purple-700 block text-[10px] uppercase font-bold">SLSA Credit</span>
+                          <span className="font-extrabold text-purple-950 text-sm">
+                            ₹{(Number(dealer.slsa_credit ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </span>
+                        </div>
+                        <div className="col-span-2 flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                          <span>Mobile: <strong className="text-slate-700">{dealer.mobile || '-'}</strong></span>
                         </div>
                       </div>
 

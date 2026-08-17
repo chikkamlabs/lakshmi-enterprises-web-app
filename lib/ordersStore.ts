@@ -32,6 +32,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   order_number: string;
+  firm?: 'LE' | 'SLSA';
   dealer_id: string;
   associate_id: string | null;
   packed_by: string | null;
@@ -62,6 +63,10 @@ const sampleDealers: Dealer[] = [
     shop_name: 'Sri Krishna Hardware & Electricals',
     mobile: '9848022338',
     address: 'Main Road, Guntur',
+    le_credit: 45000.00,
+    slsa_credit: 12000.00,
+    le_credit_limit: 100000.00,
+    slsa_credit_limit: 50000.00,
     current_credit: 45000.00,
     credit_limit: 100000.00,
     status: true,
@@ -73,6 +78,10 @@ const sampleDealers: Dealer[] = [
     shop_name: 'Balaji Electrical Mart',
     mobile: '9848033449',
     address: 'Gandhi Chowk, Vijayawada',
+    le_credit: 12500.00,
+    slsa_credit: 8500.00,
+    le_credit_limit: 50000.00,
+    slsa_credit_limit: 40000.00,
     current_credit: 12500.00,
     credit_limit: 50000.00,
     status: true,
@@ -225,6 +234,7 @@ const initialOrderItems: OrderItem[] = [
 ];
 
 export interface OrderFilters {
+  firm?: string;
   fromDate?: string;
   toDate?: string;
   associateStatus?: string;
@@ -269,6 +279,9 @@ export async function getOrders(filters?: OrderFilters): Promise<Order[]> {
       `)
       .order('created_at', { ascending: false });
 
+    if (filters?.firm && filters.firm !== 'ALL') {
+      query = query.eq('firm', filters.firm);
+    }
     if (filters?.associateStatus && filters.associateStatus !== 'ALL') {
       query = query.eq('associate_status', filters.associateStatus);
     }
@@ -343,6 +356,9 @@ export async function getOrders(filters?: OrderFilters): Promise<Order[]> {
 function applyLocalFilters(ordersList: Order[], filters?: OrderFilters): Order[] {
   let result = [...ordersList];
 
+  if (filters?.firm && filters.firm !== 'ALL') {
+    result = result.filter((o) => (o.firm || 'LE') === filters.firm);
+  }
   if (filters?.associateStatus && filters.associateStatus !== 'ALL') {
     result = result.filter((o) => o.associate_status === filters.associateStatus);
   }

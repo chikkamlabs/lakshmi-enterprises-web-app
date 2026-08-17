@@ -9,6 +9,7 @@ export interface CreateOrderItemInput {
 }
 
 export interface CreateOrderInput {
+  firm?: 'LE' | 'SLSA';
   dealer_id: string;
   associate_status: 'Draft' | 'Submitted';
   notes?: string;
@@ -131,6 +132,7 @@ export async function saveOrderToDatabase(input: CreateOrderInput): Promise<{
       .insert([
         {
           order_number: orderNumber,
+          firm: input.firm || 'LE',
           dealer_id: input.dealer_id,
           associate_id: associateId,
           associate_status: input.associate_status, // 'Draft' | 'Submitted'
@@ -341,6 +343,7 @@ export async function updateOrderInDatabase(
     const { data: updatedOrder, error: updateError } = await supabase
       .from('orders')
       .update({
+        firm: input.firm || existing.order.firm || 'LE',
         dealer_id: input.dealer_id,
         associate_status: input.associate_status,
         notes: input.notes || null,
@@ -434,6 +437,7 @@ export async function updateOrderInDatabase(
  * Fetch list of orders for Associate Orders Page with filters
  */
 export async function getAssociateOrdersList(filters?: {
+  firm?: string;
   startDate?: string;
   endDate?: string;
   search?: string;
@@ -450,6 +454,10 @@ export async function getAssociateOrdersList(filters?: {
         dealer:dealers(id, name, dealer_code, mobile)
       `)
       .order('created_at', { ascending: false });
+
+    if (filters?.firm && filters.firm !== 'ALL') {
+      query = query.eq('firm', filters.firm);
+    }
 
     if (filters?.dealerId && filters.dealerId !== 'ALL') {
       query = query.eq('dealer_id', filters.dealerId);
@@ -493,7 +501,9 @@ export async function getAssociateOrdersList(filters?: {
           const map = new Map(list.map((o) => [o.id, o]));
           for (const so of storedOrders) {
             if (!map.has(so.id)) {
-              map.set(so.id, so);
+              if (!filters?.firm || filters.firm === 'ALL' || so.firm === filters.firm) {
+                map.set(so.id, so);
+              }
             }
           }
           list = Array.from(map.values()).sort(
@@ -513,7 +523,8 @@ export async function getAssociateOrdersList(filters?: {
           (o.order_number && o.order_number.toLowerCase().includes(q)) ||
           (o.id && o.id.toLowerCase().includes(q)) ||
           (o.dealer?.name && o.dealer.name.toLowerCase().includes(q)) ||
-          (o.dealer?.dealer_code && o.dealer.dealer_code.toLowerCase().includes(q))
+          (o.dealer?.dealer_code && o.dealer.dealer_code.toLowerCase().includes(q)) ||
+          (o.firm && o.firm.toLowerCase().includes(q))
       );
     }
 

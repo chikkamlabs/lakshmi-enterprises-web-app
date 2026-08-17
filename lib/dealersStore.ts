@@ -7,8 +7,12 @@ export interface Dealer {
   mobile: string | null;
   shop_name: string | null;
   address: string | null;
-  current_credit: number;
-  credit_limit: number;
+  current_credit?: number;
+  credit_limit?: number;
+  le_credit?: number;
+  slsa_credit?: number;
+  le_credit_limit?: number;
+  slsa_credit_limit?: number;
   status: boolean;
   created_at?: string;
   updated_at?: string;
@@ -53,8 +57,10 @@ export async function addDealer(
           mobile: newDealer.mobile || null,
           shop_name: newDealer.shop_name || null,
           address: newDealer.address || null,
-          current_credit: Number(newDealer.current_credit || 0),
-          credit_limit: Number(newDealer.credit_limit || 0),
+          le_credit: Number(newDealer.le_credit || 0),
+          slsa_credit: Number(newDealer.slsa_credit || 0),
+          le_credit_limit: Number(newDealer.le_credit_limit || 0),
+          slsa_credit_limit: Number(newDealer.slsa_credit_limit || 0),
           status: newDealer.status ?? true,
         },
       ])
@@ -82,14 +88,38 @@ export async function updateDealer(
 ): Promise<Dealer | null> {
   try {
     const payload: Record<string, unknown> = {
-      ...updatedFields,
       updated_at: new Date().toISOString(),
     };
-    if (updatedFields.current_credit !== undefined) {
-      payload.current_credit = Number(updatedFields.current_credit);
+
+    if (updatedFields.dealer_code !== undefined) {
+      payload.dealer_code = updatedFields.dealer_code;
     }
-    if (updatedFields.credit_limit !== undefined) {
-      payload.credit_limit = Number(updatedFields.credit_limit);
+    if (updatedFields.name !== undefined) {
+      payload.name = updatedFields.name;
+    }
+    if (updatedFields.mobile !== undefined) {
+      payload.mobile = updatedFields.mobile;
+    }
+    if (updatedFields.shop_name !== undefined) {
+      payload.shop_name = updatedFields.shop_name;
+    }
+    if (updatedFields.address !== undefined) {
+      payload.address = updatedFields.address;
+    }
+    if (updatedFields.status !== undefined) {
+      payload.status = updatedFields.status;
+    }
+    if (updatedFields.le_credit !== undefined) {
+      payload.le_credit = Number(updatedFields.le_credit);
+    }
+    if (updatedFields.slsa_credit !== undefined) {
+      payload.slsa_credit = Number(updatedFields.slsa_credit);
+    }
+    if (updatedFields.le_credit_limit !== undefined) {
+      payload.le_credit_limit = Number(updatedFields.le_credit_limit);
+    }
+    if (updatedFields.slsa_credit_limit !== undefined) {
+      payload.slsa_credit_limit = Number(updatedFields.slsa_credit_limit);
     }
 
     const { data, error } = await supabase
