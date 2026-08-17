@@ -115,8 +115,6 @@ function EditDealerForm() {
         le_credit_limit: Number(leCreditLimit) || 0,
         slsa_credit: Number(slsaCredit) || 0,
         slsa_credit_limit: Number(slsaCreditLimit) || 0,
-        current_credit: Number(leCredit) || 0,
-        credit_limit: Number(leCreditLimit) || 0,
         status: status,
       });
 

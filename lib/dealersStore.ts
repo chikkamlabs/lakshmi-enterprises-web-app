@@ -88,9 +88,27 @@ export async function updateDealer(
 ): Promise<Dealer | null> {
   try {
     const payload: Record<string, unknown> = {
-      ...updatedFields,
       updated_at: new Date().toISOString(),
     };
+
+    if (updatedFields.dealer_code !== undefined) {
+      payload.dealer_code = updatedFields.dealer_code;
+    }
+    if (updatedFields.name !== undefined) {
+      payload.name = updatedFields.name;
+    }
+    if (updatedFields.mobile !== undefined) {
+      payload.mobile = updatedFields.mobile;
+    }
+    if (updatedFields.shop_name !== undefined) {
+      payload.shop_name = updatedFields.shop_name;
+    }
+    if (updatedFields.address !== undefined) {
+      payload.address = updatedFields.address;
+    }
+    if (updatedFields.status !== undefined) {
+      payload.status = updatedFields.status;
+    }
     if (updatedFields.le_credit !== undefined) {
       payload.le_credit = Number(updatedFields.le_credit);
     }
@@ -102,12 +120,6 @@ export async function updateDealer(
     }
     if (updatedFields.slsa_credit_limit !== undefined) {
       payload.slsa_credit_limit = Number(updatedFields.slsa_credit_limit);
-    }
-    if (updatedFields.current_credit !== undefined) {
-      payload.current_credit = Number(updatedFields.current_credit);
-    }
-    if (updatedFields.credit_limit !== undefined) {
-      payload.credit_limit = Number(updatedFields.credit_limit);
     }
 
     const { data, error } = await supabase
