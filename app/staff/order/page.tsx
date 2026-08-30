@@ -38,6 +38,10 @@ interface ItemState {
   product_name: string;
   approved_quantity: number;
   released_quantity: number;
+  mrp: number;
+  discount: number;
+  selling_price: number;
+  line_total: number;
   ticked: boolean;
 }
 
@@ -88,6 +92,16 @@ function StaffOrderDetailContent() {
               const releasedQty = item.released_quantity !== undefined && item.released_quantity !== null
                 ? Number(item.released_quantity)
                 : approvedQty;
+              const itemDiscount = Number(item.discount) || 0;
+              const rawMrp = item.mrp !== undefined && item.mrp !== null
+                ? Number(item.mrp)
+                : Number(item.associate_mrp ?? item.product?.mrp ?? item.selling_price ?? 0);
+              const rawSp = item.selling_price !== undefined && item.selling_price !== null
+                ? Number(item.selling_price)
+                : (itemDiscount > 0 ? Math.round((rawMrp - (rawMrp * itemDiscount) / 100) * 100) / 100 : rawMrp);
+              const rawLineTotal = item.line_total !== undefined && item.line_total !== null
+                ? Number(item.line_total)
+                : Math.round(rawSp * releasedQty * 100) / 100;
 
               return {
                 id: item.id,
@@ -95,6 +109,10 @@ function StaffOrderDetailContent() {
                 product_name: item.product?.name || `Product #${item.product_id}`,
                 approved_quantity: approvedQty,
                 released_quantity: releasedQty,
+                mrp: rawMrp,
+                discount: itemDiscount,
+                selling_price: rawSp,
+                line_total: rawLineTotal,
                 ticked: releasedQty > 0 || currentPs === 'Packed',
               };
             });
@@ -119,15 +137,42 @@ function StaffOrderDetailContent() {
     };
   }, [orderId]);
 
-  // Handle released quantity change
-  const handleReleasedQuantityChange = (itemId: string, newQty: number) => {
+  // Handle mrp change - if discount > 0 calculate selling_price(mrp with discount); if discount is zero, do not edit selling_price and calculate line_total(released_quantity * selling_price without change)
+  const handleMrpChange = (itemId: string, newMrp: number) => {
+    const val = Math.max(0, isNaN(newMrp) ? 0 : newMrp);
     setItemsState((prev) =>
       prev.map((item) => {
         if (item.id === itemId) {
-          const val = Math.max(0, newQty);
+          const discount = Number(item.discount) || 0;
+          const sp = discount > 0
+            ? Math.round((val - (val * discount) / 100) * 100) / 100
+            : Number(item.selling_price) || 0;
+          const lineTotal = Math.round(sp * item.released_quantity * 100) / 100;
+          return {
+            ...item,
+            mrp: val,
+            selling_price: sp,
+            line_total: lineTotal,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  // Handle released quantity change - update line_total(released_quantity * selling_price)
+  const handleReleasedQuantityChange = (itemId: string, newQty: number) => {
+    const val = Math.max(0, isNaN(newQty) ? 0 : newQty);
+    setItemsState((prev) =>
+      prev.map((item) => {
+        if (item.id === itemId) {
+          const sp = Number(item.selling_price) || 0;
+          const lineTotal = Math.round(sp * val * 100) / 100;
           return {
             ...item,
             released_quantity: val,
+            selling_price: sp,
+            line_total: lineTotal,
             ticked: val > 0 ? item.ticked : false,
           };
         }
@@ -142,14 +187,18 @@ function StaffOrderDetailContent() {
       prev.map((item) => {
         if (item.id === itemId) {
           const nextTicked = !item.ticked;
+          const nextRelQty =
+            nextTicked && item.released_quantity === 0
+              ? item.approved_quantity
+              : item.released_quantity;
+          const sp = Number(item.selling_price) || 0;
+          const lineTotal = Math.round(sp * nextRelQty * 100) / 100;
           return {
             ...item,
             ticked: nextTicked,
-            // If ticked on and released_quantity is 0, default to approved_quantity
-            released_quantity:
-              nextTicked && item.released_quantity === 0
-                ? item.approved_quantity
-                : item.released_quantity,
+            released_quantity: nextRelQty,
+            selling_price: sp,
+            line_total: lineTotal,
           };
         }
         return item;
@@ -163,11 +212,19 @@ function StaffOrderDetailContent() {
 
     setSaving(true);
     try {
-      const payloadItems = itemsState.map((it) => ({
-        id: it.id,
-        released_quantity: Number(it.released_quantity) || 0,
-        approved_quantity: Number(it.approved_quantity) || 0,
-      }));
+      const payloadItems = itemsState.map((it) => {
+        const sp = Number(it.selling_price !== undefined ? it.selling_price : it.mrp) || 0;
+        const relQty = Number(it.released_quantity) || 0;
+        const lineTot = it.line_total !== undefined ? Number(it.line_total) : Math.round(sp * relQty * 100) / 100;
+        return {
+          id: it.id,
+          released_quantity: relQty,
+          approved_quantity: Number(it.approved_quantity) || 0,
+          mrp: Number(it.mrp) || 0,
+          selling_price: sp,
+          line_total: lineTot,
+        };
+      });
 
       const ok = await saveOrderPacking({
         orderId,
@@ -381,13 +438,39 @@ function StaffOrderDetailContent() {
                           <h3 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight">
                             {item.product_name}
                           </h3>
+                          <p className="text-[10px] text-slate-500 font-medium">
+                            Selling Price: <span className="font-bold text-slate-700">₹{item.selling_price.toFixed(2)}</span>
+                            {item.discount > 0 && (
+                              <span className="ml-1 text-emerald-600 font-semibold">({item.discount}% off)</span>
+                            )}
+                          </p>
                         </div>
                       </div>
 
-                      {/* Right: Quantities */}
-                      <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 text-xs">
+                      {/* Right: Quantities & MRP */}
+                      <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 text-xs flex-wrap">
+                        {/* MRP Input */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-md p-1 min-w-[85px] text-center">
+                          <label className="text-[9px] font-bold text-slate-500 uppercase block mb-0.5">
+                            MRP (₹)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={item.mrp}
+                            onChange={(e) =>
+                              handleMrpChange(
+                                item.id,
+                                parseFloat(e.target.value) || 0
+                              )
+                            }
+                            className="w-18 text-center font-bold text-slate-900 bg-white border border-slate-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-xs mx-auto block"
+                          />
+                        </div>
+
                         {/* Approved Quantity */}
-                        <div className="bg-slate-100 border border-slate-200 rounded-md px-2.5 py-1 text-center min-w-[80px]">
+                        <div className="bg-slate-100 border border-slate-200 rounded-md px-2.5 py-1 text-center min-w-[75px]">
                           <span className="text-[9px] font-bold text-slate-500 uppercase block">
                             Approved Qty
                           </span>
@@ -397,7 +480,7 @@ function StaffOrderDetailContent() {
                         </div>
 
                         {/* Ask Released Quantity */}
-                        <div className="bg-emerald-50 border border-emerald-200 rounded-md p-1 min-w-[100px] text-center">
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-md p-1 min-w-[90px] text-center">
                           <label className="text-[9px] font-bold text-emerald-900 uppercase block mb-0.5">
                             Released Qty
                           </label>
@@ -413,6 +496,16 @@ function StaffOrderDetailContent() {
                             }
                             className="w-16 text-center font-bold text-slate-900 bg-white border border-emerald-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-xs mx-auto block"
                           />
+                        </div>
+
+                        {/* Line Total (Selling Price * Released Quantity) */}
+                        <div className="bg-emerald-100/60 border border-emerald-200 rounded-md px-2.5 py-1 text-center min-w-[85px]">
+                          <span className="text-[9px] font-bold text-emerald-800 uppercase block">
+                            Line Total
+                          </span>
+                          <span className="font-extrabold text-emerald-900 font-mono text-xs">
+                            ₹{item.line_total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
                         </div>
                       </div>
                     </div>

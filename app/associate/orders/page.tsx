@@ -18,37 +18,54 @@ import {
 } from 'lucide-react';
 import { getAssociateOrdersList, getDealersForOrder } from '../../../lib/createOrder';
 import { Dealer } from '../../../lib/dealersStore';
+import { getStoredGroups, Group } from '../../../lib/groupsStore';
 import AssociateHeader from '../header/page';
 import AssociateBottomNavigation from '../buttomnavigation/page';
+
+function getLast3WeeksRange() {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - 21);
+  return {
+    startDate: start.toISOString().split('T')[0],
+    endDate: end.toISOString().split('T')[0],
+  };
+}
 
 export default function AssociateOrdersPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Filters state
+  // Filters state with default last 3 weeks
   const [firmFilter, setFirmFilter] = useState<string>('ALL');
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>(() => getLast3WeeksRange().startDate);
+  const [endDate, setEndDate] = useState<string>(() => getLast3WeeksRange().endDate);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDealerId, setSelectedDealerId] = useState<string>('ALL');
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('ALL');
   const [associateStatusFilter, setAssociateStatusFilter] = useState<string>('ALL');
   const [approvingStatusFilter, setApprovingStatusFilter] = useState<string>('ALL');
   const [packingStatusFilter, setPackingStatusFilter] = useState<string>('ALL');
 
-  // Dealers for filter dropdown
+  // Dealers & Groups for filter dropdown
   const [dealers, setDealers] = useState<Dealer[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [showFilters, setShowFilters] = useState<boolean>(false);
 
   useEffect(() => {
-    async function loadDealers() {
+    async function loadFilterData() {
       try {
-        const dData = await getDealersForOrder();
+        const [dData, gData] = await Promise.all([
+          getDealersForOrder(),
+          getStoredGroups(),
+        ]);
         setDealers(dData);
+        setGroups(gData);
       } catch (err) {
-        console.warn('Error loading dealers filter:', err);
+        console.warn('Error loading filter options:', err);
       }
     }
-    loadDealers();
+    loadFilterData();
   }, []);
 
   // Fetch orders when filters change
@@ -63,6 +80,7 @@ export default function AssociateOrdersPage() {
           endDate: endDate || undefined,
           search: searchQuery || undefined,
           dealerId: selectedDealerId,
+          groupId: selectedGroupId,
           associateStatus: associateStatusFilter,
           approvingStatus: approvingStatusFilter,
           packingStatus: packingStatusFilter,
@@ -90,10 +108,29 @@ export default function AssociateOrdersPage() {
     endDate,
     searchQuery,
     selectedDealerId,
+    selectedGroupId,
     associateStatusFilter,
     approvingStatusFilter,
     packingStatusFilter,
   ]);
+
+  // Calculate Total Sale and Balance Amount for resulted orders
+  const { totalSale, totalBalance } = useMemo(() => {
+    let sale = 0;
+    let balance = 0;
+    for (const o of orders) {
+      const s = Number(o.total_amount) || 0;
+      const b =
+        o.balance_amount !== undefined && o.balance_amount !== null
+          ? Number(o.balance_amount)
+          : o.pending_amount !== undefined && o.pending_amount !== null
+          ? Number(o.pending_amount)
+          : (Number(o.total_amount) || 0) - (Number(o.received_amount) || 0);
+      sale += s;
+      balance += isNaN(b) ? 0 : b;
+    }
+    return { totalSale: sale, totalBalance: balance };
+  }, [orders]);
 
   // Helper for Associate Status (AS) Tag
   const renderASTag = (status: string) => {
@@ -181,6 +218,21 @@ export default function AssociateOrdersPage() {
     }
   };
 
+  // Format date only
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return '-';
+    try {
+      const dt = new Date(dateStr);
+      return dt.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 pb-20">
       {/* Header */}
@@ -201,7 +253,7 @@ export default function AssociateOrdersPage() {
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors ${
-                showFilters || firmFilter !== 'ALL' || startDate || endDate || selectedDealerId !== 'ALL' || associateStatusFilter !== 'ALL' || approvingStatusFilter !== 'ALL' || packingStatusFilter !== 'ALL'
+                showFilters || firmFilter !== 'ALL' || startDate || endDate || selectedDealerId !== 'ALL' || selectedGroupId !== 'ALL' || associateStatusFilter !== 'ALL' || approvingStatusFilter !== 'ALL' || packingStatusFilter !== 'ALL'
                   ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
                   : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
@@ -263,9 +315,29 @@ export default function AssociateOrdersPage() {
             </div>
           </div>
 
-          {/* Collapsible Extended Filters (Firm, Dealer & Status Filters) */}
-          {(showFilters || firmFilter !== 'ALL' || selectedDealerId !== 'ALL' || associateStatusFilter !== 'ALL' || approvingStatusFilter !== 'ALL' || packingStatusFilter !== 'ALL') && (
-            <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs animate-fade-in">
+          {/* Total Sale & Balance Amount Cards (Right Below Dates) */}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <div className="bg-emerald-50/90 border border-emerald-200 rounded-lg p-2.5 flex flex-col justify-between">
+              <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">
+                Total Sale
+              </span>
+              <div className="text-sm sm:text-base font-extrabold text-emerald-950 font-mono tracking-tight mt-0.5">
+                ₹{totalSale.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+            <div className="bg-amber-50/90 border border-amber-200 rounded-lg p-2.5 flex flex-col justify-between">
+              <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">
+                Balance Amount
+              </span>
+              <div className="text-sm sm:text-base font-extrabold text-amber-950 font-mono tracking-tight mt-0.5">
+                ₹{totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
+
+          {/* Collapsible Extended Filters (Firm, Dealer, Group & Status Filters) */}
+          {(showFilters || firmFilter !== 'ALL' || selectedDealerId !== 'ALL' || selectedGroupId !== 'ALL' || associateStatusFilter !== 'ALL' || approvingStatusFilter !== 'ALL' || packingStatusFilter !== 'ALL') && (
+            <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 text-xs animate-fade-in">
               {/* Firm Type Filter */}
               <div>
                 <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Firm Type</label>
@@ -292,6 +364,23 @@ export default function AssociateOrdersPage() {
                   {dealers.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.name} ({d.dealer_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Group Filter */}
+              <div>
+                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Dealer Group</label>
+                <select
+                  value={selectedGroupId}
+                  onChange={(e) => setSelectedGroupId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-md text-xs px-2 py-1 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="ALL">All Groups</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.group_name} ({g.group_id})
                     </option>
                   ))}
                 </select>
@@ -342,15 +431,17 @@ export default function AssociateOrdersPage() {
               </div>
 
               {/* Clear Filters Button */}
-              <div className="sm:col-span-2 lg:col-span-5 flex justify-end pt-1">
+              <div className="sm:col-span-2 lg:col-span-6 flex justify-end pt-1">
                 <button
                   type="button"
                   onClick={() => {
+                    const range = getLast3WeeksRange();
                     setFirmFilter('ALL');
-                    setStartDate('');
-                    setEndDate('');
+                    setStartDate(range.startDate);
+                    setEndDate(range.endDate);
                     setSearchQuery('');
                     setSelectedDealerId('ALL');
+                    setSelectedGroupId('ALL');
                     setAssociateStatusFilter('ALL');
                     setApprovingStatusFilter('ALL');
                     setPackingStatusFilter('ALL');
@@ -438,8 +529,42 @@ export default function AssociateOrdersPage() {
                     <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 mt-1" />
                   </div>
 
+                  {/* Order Financials & Delivered Date */}
+                  <div className="mt-2 pt-2 border-t border-slate-100 grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-500 block leading-tight">Amount</span>
+                      <span className="font-bold text-slate-900 font-mono text-xs">
+                        ₹{Number(order.amount ?? order.total_amount ?? 0).toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-500 block leading-tight">Balance</span>
+                      <span className="font-bold text-rose-600 font-mono text-xs">
+                        ₹{Number(
+                          order.balance_amount ??
+                            order.pending_amount ??
+                            ((Number(order.total_amount) || 0) - (Number(order.received_amount) || 0))
+                        ).toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-500 block leading-tight">Delivered Date</span>
+                      <span className="font-medium text-slate-700 font-mono text-[11px]">
+                        {order.delivered_date ? formatDate(order.delivered_date) : '-'}
+                      </span>
+                    </div>
+                  </div>
+
                   {/* Status Tags Row & Very Small Date Time */}
-                  <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                  <div className="mt-2 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                     {/* Status Tags */}
                     <div className="flex flex-wrap items-center gap-1.5">
                       {/* AS Tag */}

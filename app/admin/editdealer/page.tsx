@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import AdminHeader from '../header/page';
 import AdminSidebar from '../sidebar/page';
 import { getDealerById, getStoredDealers, updateDealer, Dealer } from '@/lib/dealersStore';
-import { Edit2, ArrowLeft, Loader2, Save, X, AlertCircle, CheckCircle2, Store } from 'lucide-react';
+import { getStoredGroups, Group } from '@/lib/groupsStore';
+import { Edit2, ArrowLeft, Loader2, Save, X, AlertCircle, CheckCircle2, Store, Layers } from 'lucide-react';
 
 function EditDealerForm() {
   const router = useRouter();
@@ -21,6 +22,8 @@ function EditDealerForm() {
   // Form states
   const [dealerCode, setDealerCode] = useState('');
   const [name, setName] = useState('');
+  const [groupId, setGroupId] = useState('');
+  const [groups, setGroups] = useState<Group[]>([]);
   const [mobile, setMobile] = useState('');
   const [shopName, setShopName] = useState('');
   const [address, setAddress] = useState('');
@@ -43,7 +46,12 @@ function EditDealerForm() {
       setIsLoading(true);
       setError('');
       try {
-        let dealer = await getDealerById(dealerId);
+        const [groupsList, fetchedDealer] = await Promise.all([
+          getStoredGroups(),
+          getDealerById(dealerId),
+        ]);
+
+        let dealer = fetchedDealer;
 
         // Fallback search if direct ID lookup fails
         if (!dealer) {
@@ -52,10 +60,12 @@ function EditDealerForm() {
         }
 
         if (isMounted) {
+          setGroups(groupsList);
           if (dealer) {
             setTargetDealer(dealer);
             setDealerCode(dealer.dealer_code || '');
             setName(dealer.name || '');
+            setGroupId(dealer.group_id || dealer.group?.id || '');
             setMobile(dealer.mobile || '');
             setShopName(dealer.shop_name || '');
             setAddress(dealer.address || '');
@@ -107,6 +117,7 @@ function EditDealerForm() {
     try {
       const updated = await updateDealer(targetDealer.id, {
         dealer_code: dealerCode.trim(),
+        group_id: groupId || null,
         name: name.trim(),
         mobile: mobile.trim() || null,
         shop_name: shopName.trim() || null,
@@ -240,6 +251,25 @@ function EditDealerForm() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
+                <label htmlFor="editDealerGroup" className="form-label font-semibold text-slate-700 block mb-1">
+                  Group Classification
+                </label>
+                <select
+                  id="editDealerGroup"
+                  value={groupId}
+                  onChange={(e) => setGroupId(e.target.value)}
+                  className="form-input w-full rounded-lg border-slate-300 bg-white"
+                >
+                  <option value="">-- No Group / Select Group --</option>
+                  {groups.map((grp) => (
+                    <option key={grp.id} value={grp.id}>
+                      {grp.group_name} ({grp.group_id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label htmlFor="editShopName" className="form-label font-semibold text-slate-700 block mb-1">
                   Shop / Firm Name
                 </label>
@@ -251,7 +281,9 @@ function EditDealerForm() {
                   className="form-input w-full rounded-lg border-slate-300"
                 />
               </div>
+            </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="editMobile" className="form-label font-semibold text-slate-700 block mb-1">
                   Mobile Number

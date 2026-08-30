@@ -23,6 +23,12 @@ export interface OrderItem {
   released_quantity: number;
   pending_quantity: number;
   selling_price: number;
+  mrp?: number;
+  associate_mrp?: number;
+  discount?: number;
+  ad_discount?: number;
+  gst?: number;
+  notes?: string | null;
   line_total: number;
   created_at?: string;
   updated_at?: string;
@@ -41,6 +47,9 @@ export interface Order {
   packing_status: PackingStatus;
   notes: string | null;
   total_amount: number;
+  amount?: number;
+  balance_amount?: number;
+  delivered_date?: string | null;
   item_count?: number;
   created_at?: string;
   updated_at?: string;
@@ -242,6 +251,7 @@ export interface OrderFilters {
   packingStatus?: string;
   dealerId?: string;
   associateId?: string;
+  groupId?: string;
 }
 
 /**
@@ -272,7 +282,7 @@ export async function getOrders(filters?: OrderFilters): Promise<Order[]> {
       .from('orders')
       .select(`
         *,
-        dealer:dealers(*),
+        dealer:dealers(*, group:groups(*)),
         associate:profiles!orders_associate_id_fkey(id, name, email, mobile),
         packed_by_profile:profiles!orders_packed_by_fkey(id, name, email, mobile),
         order_items(id)
@@ -313,14 +323,20 @@ export async function getOrders(filters?: OrderFilters): Promise<Order[]> {
         ...o,
         item_count: Array.isArray(o.order_items) ? o.order_items.length : 0,
       }));
-      return mapped as Order[];
+      let filteredResult = mapped as Order[];
+      if (filters?.groupId && filters.groupId !== 'ALL') {
+        filteredResult = filteredResult.filter(
+          (o) => o.dealer?.group_id === filters.groupId || o.dealer?.group?.id === filters.groupId
+        );
+      }
+      return filteredResult;
     }
 
     // Fallback if joined query had foreign key issues
     const simpleRes = await supabase.from('orders').select('*').order('created_at', { ascending: false });
     if (!simpleRes.error && simpleRes.data) {
       const [dealersRes, profilesRes, itemsRes] = await Promise.all([
-        supabase.from('dealers').select('*'),
+        supabase.from('dealers').select('*, group:groups(*)'),
         supabase.from('profiles').select('*'),
         supabase.from('order_items').select('id, order_id'),
       ]);
@@ -370,6 +386,11 @@ function applyLocalFilters(ordersList: Order[], filters?: OrderFilters): Order[]
   }
   if (filters?.dealerId && filters.dealerId !== 'ALL') {
     result = result.filter((o) => o.dealer_id === filters.dealerId);
+  }
+  if (filters?.groupId && filters.groupId !== 'ALL') {
+    result = result.filter(
+      (o) => o.dealer?.group_id === filters.groupId || o.dealer?.group?.id === filters.groupId
+    );
   }
   if (filters?.associateId && filters.associateId !== 'ALL') {
     result = result.filter((o) => o.associate_id === filters.associateId);
@@ -445,7 +466,7 @@ export async function getOrderById(orderId: string): Promise<{
 
     if (!orderErr && orderData) {
       const [dealerRes, associateRes, packedByRes, itemsRes] = await Promise.all([
-        supabase.from('dealers').select('*').eq('id', orderData.dealer_id).maybeSingle(),
+        supabase.from('dealers').select('*, group:groups(*)').eq('id', orderData.dealer_id).maybeSingle(),
         orderData.associate_id
           ? supabase.from('profiles').select('id, name, email, mobile').eq('id', orderData.associate_id).maybeSingle()
           : Promise.resolve({ data: null }),
@@ -517,6 +538,7 @@ export async function saveOrderApproval(params: {
   orderId: string;
   approvingStatus: ApprovingStatus;
   packedByStaffId: string | null;
+  deliveredDate?: string | null;
   notes?: string;
   updatedItems: {
     id: string;
@@ -525,7 +547,7 @@ export async function saveOrderApproval(params: {
     line_total: number;
   }[];
 }): Promise<boolean> {
-  const { orderId, approvingStatus, packedByStaffId, notes, updatedItems } = params;
+  const { orderId, approvingStatus, packedByStaffId, deliveredDate, notes, updatedItems } = params;
 
   // Calculate new total order amount
   const newTotalAmount = updatedItems.reduce((acc, curr) => acc + (Number(curr.line_total) || 0), 0);
@@ -535,15 +557,22 @@ export async function saveOrderApproval(params: {
   // 1. Try updating Supabase
   try {
     // Update order level
+    const updatePayload: Record<string, unknown> = {
+      approving_status: approvingStatus,
+      packed_by: packedByStaffId || null,
+      total_amount: newTotalAmount,
+      updated_at: new Date().toISOString(),
+    };
+    if (notes !== undefined) {
+      updatePayload.notes = notes;
+    }
+    if (deliveredDate !== undefined) {
+      updatePayload.delivered_date = deliveredDate || null;
+    }
+
     const { error: orderErr } = await supabase
       .from('orders')
-      .update({
-        approving_status: approvingStatus,
-        packed_by: packedByStaffId || null,
-        total_amount: newTotalAmount,
-        notes: notes !== undefined ? notes : undefined,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', orderId);
 
     if (!orderErr) {
@@ -578,6 +607,7 @@ export async function saveOrderApproval(params: {
           orders[idx].packed_by = packedByStaffId;
           orders[idx].total_amount = newTotalAmount;
           if (notes !== undefined) orders[idx].notes = notes;
+          if (deliveredDate !== undefined) orders[idx].delivered_date = deliveredDate || null;
           orders[idx].updated_at = new Date().toISOString();
           localStorage.setItem(LOCAL_STORAGE_ORDERS_KEY, JSON.stringify(orders));
         }
@@ -618,6 +648,9 @@ export async function saveOrderPacking(params: {
     id: string;
     released_quantity: number;
     approved_quantity: number;
+    mrp?: number;
+    selling_price?: number;
+    line_total?: number;
   }[];
 }): Promise<boolean> {
   const { orderId, packingStatus, packedByStaffId, items } = params;
@@ -640,16 +673,45 @@ export async function saveOrderPacking(params: {
 
     if (!orderErr) {
       for (const item of items) {
-        const pending = Math.max(0, item.approved_quantity - item.released_quantity);
+        const relQty = Number(item.released_quantity) || 0;
+        const appQty = Number(item.approved_quantity) || 0;
+        const mrp = Number(item.mrp) || 0;
+        const sellingPrice = item.selling_price !== undefined ? Number(item.selling_price) : mrp;
+        const lineTotal = item.line_total !== undefined ? Number(item.line_total) : Math.round(sellingPrice * relQty * 100) / 100;
+        const pending = Math.max(0, appQty - relQty);
+
+        const itemPayload: any = {
+          released_quantity: relQty,
+          pending_quantity: pending,
+          mrp: mrp,
+          selling_price: sellingPrice,
+          line_total: lineTotal,
+          updated_at: new Date().toISOString(),
+        };
+
         await supabase
           .from('order_items')
-          .update({
-            released_quantity: item.released_quantity,
-            pending_quantity: pending,
-            updated_at: new Date().toISOString(),
-          })
+          .update(itemPayload)
           .eq('id', item.id);
       }
+
+      // Recalculate order total amount from all items and update orders
+      const { data: allItems } = await supabase
+        .from('order_items')
+        .select('line_total')
+        .eq('order_id', orderId);
+
+      if (allItems && allItems.length > 0) {
+        const newTotal = allItems.reduce((acc, it) => acc + (Number(it.line_total) || 0), 0);
+        await supabase
+          .from('orders')
+          .update({
+            total_amount: newTotal,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', orderId);
+      }
+
       success = true;
     }
   } catch (err) {
@@ -658,34 +720,154 @@ export async function saveOrderPacking(params: {
 
   if (typeof window !== 'undefined') {
     try {
-      const ordersStr = localStorage.getItem(LOCAL_STORAGE_ORDERS_KEY);
-      if (ordersStr) {
-        const orders: Order[] = JSON.parse(ordersStr);
-        const idx = orders.findIndex((o) => o.id === orderId);
-        if (idx !== -1) {
-          orders[idx].packing_status = packingStatus;
-          if (packedByStaffId !== undefined) orders[idx].packed_by = packedByStaffId;
-          orders[idx].updated_at = new Date().toISOString();
-          localStorage.setItem(LOCAL_STORAGE_ORDERS_KEY, JSON.stringify(orders));
-        }
-      }
-
       const itemsStr = localStorage.getItem(LOCAL_STORAGE_ORDER_ITEMS_KEY);
       if (itemsStr) {
         const storeItems: OrderItem[] = JSON.parse(itemsStr);
         items.forEach((uItem) => {
           const itemIdx = storeItems.findIndex((it) => it.id === uItem.id);
           if (itemIdx !== -1) {
-            storeItems[itemIdx].released_quantity = uItem.released_quantity;
-            storeItems[itemIdx].pending_quantity = Math.max(0, uItem.approved_quantity - uItem.released_quantity);
+            const relQty = Number(uItem.released_quantity) || 0;
+            const mrp = uItem.mrp !== undefined ? Number(uItem.mrp) : (storeItems[itemIdx].mrp || 0);
+            const sp = uItem.selling_price !== undefined ? Number(uItem.selling_price) : mrp;
+            const lineTot = uItem.line_total !== undefined ? Number(uItem.line_total) : Math.round(sp * relQty * 100) / 100;
+
+            storeItems[itemIdx].released_quantity = relQty;
+            storeItems[itemIdx].pending_quantity = Math.max(0, (uItem.approved_quantity ?? storeItems[itemIdx].approved_quantity) - relQty);
+            storeItems[itemIdx].mrp = mrp;
+            storeItems[itemIdx].selling_price = sp;
+            storeItems[itemIdx].line_total = lineTot;
             storeItems[itemIdx].updated_at = new Date().toISOString();
           }
         });
         localStorage.setItem(LOCAL_STORAGE_ORDER_ITEMS_KEY, JSON.stringify(storeItems));
+
+        // Update total_amount in orders
+        const orderItems = storeItems.filter((it) => it.order_id === orderId);
+        const newOrderTotal = orderItems.reduce((sum, it) => sum + (Number(it.line_total) || 0), 0);
+
+        const ordersStr = localStorage.getItem(LOCAL_STORAGE_ORDERS_KEY);
+        if (ordersStr) {
+          const orders: Order[] = JSON.parse(ordersStr);
+          const idx = orders.findIndex((o) => o.id === orderId);
+          if (idx !== -1) {
+            orders[idx].packing_status = packingStatus;
+            if (packedByStaffId !== undefined) orders[idx].packed_by = packedByStaffId;
+            orders[idx].total_amount = newOrderTotal;
+            orders[idx].updated_at = new Date().toISOString();
+            localStorage.setItem(LOCAL_STORAGE_ORDERS_KEY, JSON.stringify(orders));
+          }
+        }
       }
       success = true;
     } catch (e) {
       console.error('Local storage packing update error:', e);
+    }
+  }
+
+  return success;
+}
+
+/**
+ * Update a single order item in the database (order_items table) and sync order totals
+ */
+export async function updateSingleOrderItem(params: {
+  itemId: string;
+  orderId: string;
+  requested_quantity?: number;
+  approved_quantity?: number;
+  released_quantity?: number;
+  mrp?: number;
+  associate_mrp?: number;
+  discount?: number;
+  selling_price?: number;
+  ad_discount?: number;
+  notes?: string | null;
+  line_total?: number;
+}): Promise<boolean> {
+  const { itemId, orderId, ...fields } = params;
+  let success = false;
+
+  try {
+    const payload: any = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (fields.requested_quantity !== undefined) payload.requested_quantity = Number(fields.requested_quantity) || 0;
+    if (fields.approved_quantity !== undefined) payload.approved_quantity = Number(fields.approved_quantity) || 0;
+    if (fields.released_quantity !== undefined) payload.released_quantity = Number(fields.released_quantity) || 0;
+    if (fields.mrp !== undefined) payload.mrp = Number(fields.mrp) || 0;
+    if (fields.associate_mrp !== undefined) payload.associate_mrp = Number(fields.associate_mrp) || 0;
+    if (fields.discount !== undefined) payload.discount = Number(fields.discount) || 0;
+    if (fields.selling_price !== undefined) payload.selling_price = Number(fields.selling_price) || 0;
+    if (fields.ad_discount !== undefined) payload.ad_discount = Number(fields.ad_discount) || 0;
+    if (fields.notes !== undefined) payload.notes = fields.notes;
+    if (fields.line_total !== undefined) payload.line_total = Number(fields.line_total) || 0;
+
+    if (fields.approved_quantity !== undefined && fields.released_quantity !== undefined) {
+      payload.pending_quantity = Math.max(0, fields.approved_quantity - fields.released_quantity);
+    } else if (fields.approved_quantity !== undefined) {
+      payload.pending_quantity = fields.approved_quantity;
+    }
+
+    // 1. Update in Supabase
+    const { error: itemErr } = await supabase
+      .from('order_items')
+      .update(payload)
+      .eq('id', itemId);
+
+    if (!itemErr) {
+      // Recalculate order total amount from all items
+      const { data: allItems } = await supabase
+        .from('order_items')
+        .select('line_total')
+        .eq('order_id', orderId);
+
+      if (allItems && allItems.length > 0) {
+        const newTotal = allItems.reduce((acc, it) => acc + (Number(it.line_total) || 0), 0);
+        await supabase
+          .from('orders')
+          .update({
+            total_amount: newTotal,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', orderId);
+      }
+      success = true;
+    }
+  } catch (err) {
+    console.warn('Error updating order item in Supabase:', err);
+  }
+
+  // 2. Sync to localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const itemsStr = localStorage.getItem(LOCAL_STORAGE_ORDER_ITEMS_KEY);
+      if (itemsStr) {
+        const storeItems: OrderItem[] = JSON.parse(itemsStr);
+        const itemIdx = storeItems.findIndex((it) => it.id === itemId);
+        if (itemIdx !== -1) {
+          storeItems[itemIdx] = { ...storeItems[itemIdx], ...fields, updated_at: new Date().toISOString() };
+          localStorage.setItem(LOCAL_STORAGE_ORDER_ITEMS_KEY, JSON.stringify(storeItems));
+
+          // Update total_amount in orders
+          const orderItems = storeItems.filter((it) => it.order_id === orderId);
+          const newOrderTotal = orderItems.reduce((sum, it) => sum + (Number(it.line_total) || 0), 0);
+
+          const ordersStr = localStorage.getItem(LOCAL_STORAGE_ORDERS_KEY);
+          if (ordersStr) {
+            const orders: Order[] = JSON.parse(ordersStr);
+            const ordIdx = orders.findIndex((o) => o.id === orderId);
+            if (ordIdx !== -1) {
+              orders[ordIdx].total_amount = newOrderTotal;
+              orders[ordIdx].updated_at = new Date().toISOString();
+              localStorage.setItem(LOCAL_STORAGE_ORDERS_KEY, JSON.stringify(orders));
+            }
+          }
+        }
+      }
+      success = true;
+    } catch (e) {
+      console.warn('Error updating localStorage item:', e);
     }
   }
 

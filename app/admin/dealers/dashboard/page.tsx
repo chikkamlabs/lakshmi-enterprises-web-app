@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import AdminHeader from '../../header/page';
 import AdminSidebar from '../../sidebar/page';
 import { getStoredDealers, Dealer } from '@/lib/dealersStore';
+import { getStoredGroups, Group } from '@/lib/groupsStore';
 import {
   Plus,
   Search,
@@ -18,11 +19,15 @@ import {
   XCircle,
   RefreshCw,
   Loader2,
+  Layers,
+  Filter,
 } from 'lucide-react';
 
 export default function AdminDealersDashboardPage() {
   const router = useRouter();
   const [dealers, setDealers] = useState<Dealer[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('ALL');
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState('');
@@ -31,8 +36,12 @@ export default function AdminDealersDashboardPage() {
     setIsLoading(true);
     setError('');
     try {
-      const data = await getStoredDealers();
-      setDealers(data);
+      const [dealersData, groupsData] = await Promise.all([
+        getStoredDealers(),
+        getStoredGroups(),
+      ]);
+      setDealers(dealersData);
+      setGroups(groupsData);
     } catch (err: unknown) {
       console.error('Failed to load dealers:', err);
       setError('Could not load dealers from database.');
@@ -44,10 +53,11 @@ export default function AdminDealersDashboardPage() {
 
   useEffect(() => {
     let isMounted = true;
-    getStoredDealers()
-      .then((data) => {
+    Promise.all([getStoredDealers(), getStoredGroups()])
+      .then(([dealersData, groupsData]) => {
         if (isMounted) {
-          setDealers(data);
+          setDealers(dealersData);
+          setGroups(groupsData);
           setIsLoading(false);
         }
       })
@@ -74,19 +84,35 @@ export default function AdminDealersDashboardPage() {
     return dealers.reduce((sum, dealer) => sum + (Number(dealer.slsa_credit) || 0), 0);
   }, [dealers]);
 
-  // Filter dealers
+  // Filter dealers by group and search query
   const filteredDealers = useMemo(() => {
+    let result = dealers;
+
+    if (selectedGroupId && selectedGroupId !== 'ALL') {
+      result = result.filter(
+        (d) =>
+          d.group_id === selectedGroupId ||
+          d.group?.id === selectedGroupId ||
+          d.group?.group_id === selectedGroupId
+      );
+    }
+
     const query = searchQuery.toLowerCase().trim();
-    if (!query) return dealers;
-    return dealers.filter(
-      (d) =>
-        (d.name || '').toLowerCase().includes(query) ||
-        (d.dealer_code || '').toLowerCase().includes(query) ||
-        (d.mobile || '').toLowerCase().includes(query) ||
-        (d.shop_name || '').toLowerCase().includes(query) ||
-        (d.address || '').toLowerCase().includes(query)
-    );
-  }, [dealers, searchQuery]);
+    if (query) {
+      result = result.filter(
+        (d) =>
+          (d.name || '').toLowerCase().includes(query) ||
+          (d.dealer_code || '').toLowerCase().includes(query) ||
+          (d.mobile || '').toLowerCase().includes(query) ||
+          (d.shop_name || '').toLowerCase().includes(query) ||
+          (d.address || '').toLowerCase().includes(query) ||
+          (d.group?.group_name || '').toLowerCase().includes(query) ||
+          (d.group?.group_id || '').toLowerCase().includes(query)
+      );
+    }
+
+    return result;
+  }, [dealers, searchQuery, selectedGroupId]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
@@ -194,20 +220,39 @@ export default function AdminDealersDashboardPage() {
             </div>
           </div>
 
-          {/* Search & Counter Bar */}
+          {/* Search & Filter Bar */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="relative w-full sm:max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search by name, code, shop, or mobile..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="form-input pl-9 pr-4 py-2 text-xs sm:text-sm w-full rounded-lg border-slate-200 focus:border-indigo-500 focus:ring-indigo-500"
-              />
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:max-w-2xl">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search by name, code, shop, or mobile..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="form-input pl-9 pr-4 py-2 text-xs sm:text-sm w-full rounded-lg border-slate-200 focus:border-indigo-500 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Group Filter */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Layers className="w-4 h-4 text-slate-400 shrink-0" />
+                <select
+                  value={selectedGroupId}
+                  onChange={(e) => setSelectedGroupId(e.target.value)}
+                  className="form-input py-2 px-3 text-xs sm:text-sm rounded-lg border-slate-200 bg-white font-medium text-slate-700 focus:border-indigo-500 focus:ring-indigo-500"
+                >
+                  <option value="ALL">All Groups ({dealers.length})</option>
+                  {groups.map((grp) => (
+                    <option key={grp.id} value={grp.id}>
+                      {grp.group_name} ({grp.group_id})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            <div className="text-xs text-slate-500 self-end sm:self-center">
+            <div className="text-xs text-slate-500 self-end sm:self-center shrink-0">
               Showing <span className="font-semibold text-slate-800">{filteredDealers.length}</span> of{' '}
               <span className="font-semibold text-slate-800">{dealers.length}</span> dealers
             </div>
@@ -225,9 +270,11 @@ export default function AdminDealersDashboardPage() {
                 <Store className="w-12 h-12 text-slate-300 mb-3" />
                 <p className="text-base font-semibold text-slate-700">No dealers available</p>
                 <p className="text-xs text-slate-400 max-w-xs mt-1">
-                  {searchQuery ? 'Try clearing search filter.' : 'Click "Add Dealer" to register your first dealer entry.'}
+                  {searchQuery || selectedGroupId !== 'ALL'
+                    ? 'Try clearing filters or search query.'
+                    : 'Click "Add Dealer" to register your first dealer entry.'}
                 </p>
-                {!searchQuery && (
+                {!searchQuery && selectedGroupId === 'ALL' && (
                   <button
                     onClick={() => router.push('/admin/adddealer')}
                     className="btn-base btn-primary text-xs mt-4 flex items-center gap-1.5"
@@ -245,6 +292,7 @@ export default function AdminDealersDashboardPage() {
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider">
                         <th className="py-3.5 px-4">Dealer</th>
+                        <th className="py-3.5 px-4">Group</th>
                         <th className="py-3.5 px-4">Shop Name</th>
                         <th className="py-3.5 px-4">Mobile</th>
                         <th className="py-3.5 px-4">LE Credit</th>
@@ -259,6 +307,16 @@ export default function AdminDealersDashboardPage() {
                           <td className="py-3.5 px-4">
                             <div className="font-semibold text-slate-900">{dealer.name}</div>
                             <div className="text-xs text-indigo-600 font-mono font-medium">{dealer.dealer_code}</div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            {dealer.group?.group_name ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                <Layers className="w-3 h-3 text-indigo-500" />
+                                <span>{dealer.group.group_name}</span>
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic text-xs">-</span>
+                            )}
                           </td>
                           <td className="py-3.5 px-4 text-slate-700 font-medium">
                             {dealer.shop_name || <span className="text-slate-400 italic">Not set</span>}
@@ -307,13 +365,23 @@ export default function AdminDealersDashboardPage() {
                             )}
                           </td>
                           <td className="py-3.5 px-4 text-right">
-                            <button
-                              onClick={() => router.push(`/admin/editdealer?id=${dealer.id}`)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                              <span>Edit</span>
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => router.push(`/admin/dealerpayments?dealerId=${dealer.id}`)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+                                title="View Dealer Payments Ledger"
+                              >
+                                <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Payments</span>
+                              </button>
+                              <button
+                                onClick={() => router.push(`/admin/editdealer?id=${dealer.id}`)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                                <span>Edit</span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -327,9 +395,17 @@ export default function AdminDealersDashboardPage() {
                     <div key={dealer.id} className="p-4 space-y-3 bg-white">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <span className="text-xs font-mono font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-                            {dealer.dealer_code}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-mono font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                              {dealer.dealer_code}
+                            </span>
+                            {dealer.group?.group_name && (
+                              <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-100 flex items-center gap-1">
+                                <Layers className="w-3 h-3" />
+                                {dealer.group.group_name}
+                              </span>
+                            )}
+                          </div>
                           <h4 className="font-bold text-slate-900 text-base mt-1">{dealer.name}</h4>
                           {dealer.shop_name && (
                             <p className="text-xs text-slate-600 font-medium flex items-center gap-1 mt-0.5">
@@ -375,7 +451,14 @@ export default function AdminDealersDashboardPage() {
                         </div>
                       )}
 
-                      <div className="pt-2 flex justify-end">
+                      <div className="pt-2 grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => router.push(`/admin/dealerpayments?dealerId=${dealer.id}`)}
+                          className="w-full btn-base btn-secondary text-xs flex items-center justify-center gap-1.5 py-2 cursor-pointer bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                        >
+                          <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Payments</span>
+                        </button>
                         <button
                           onClick={() => router.push(`/admin/editdealer?id=${dealer.id}`)}
                           className="w-full btn-base btn-secondary text-xs flex items-center justify-center gap-1.5 py-2 cursor-pointer"

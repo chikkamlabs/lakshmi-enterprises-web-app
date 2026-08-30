@@ -34,7 +34,7 @@ export default function AddProductPage() {
   const [isLoadingDropdowns, setIsLoadingDropdowns] = useState(true);
 
   // Form state - all fields in schemas.sql
-  const [productCode, setProductCode] = useState('PRD-10001');
+  const [productCode, setProductCode] = useState('PRD-101');
   const [barcode, setBarcode] = useState('');
   const [name, setName] = useState('');
   const [companyId, setCompanyId] = useState('');
@@ -42,6 +42,7 @@ export default function AddProductPage() {
   const [purchasePrice, setPurchasePrice] = useState('0.00');
   const [sellingPrice, setSellingPrice] = useState('0.00');
   const [mrp, setMrp] = useState('0.00');
+  const [adDisc, setAdDisc] = useState('0.00');
   const [currentStock, setCurrentStock] = useState('0');
   const [lowStock, setLowStock] = useState('10');
   const [unit, setUnit] = useState('pcs');
@@ -58,7 +59,7 @@ export default function AddProductPage() {
         setIsLoadingDropdowns(false);
 
         if (existingProducts.length > 0) {
-          setProductCode(`PRD-${10001 + existingProducts.length}`);
+          setProductCode(`PRD-${101 + existingProducts.length}`);
         }
       })
       .catch((err) => {
@@ -96,6 +97,7 @@ export default function AddProductPage() {
         purchase_price: Number(purchasePrice) || 0,
         selling_price: Number(sellingPrice) || 0,
         mrp: Number(mrp) || 0,
+        ad_disc: Number(adDisc) || 0,
         current_stock: Math.max(0, parseInt(currentStock, 10) || 0),
         low_stock: Math.max(0, parseInt(lowStock, 10) || 10),
         unit: unit.trim() || 'pcs',
@@ -199,7 +201,7 @@ export default function AddProductPage() {
                       value={productCode}
                       onChange={(e) => setProductCode(e.target.value)}
                       className="form-input w-full rounded-lg border-slate-300 font-mono"
-                      placeholder="e.g. PRD-10001"
+                      placeholder="e.g. PRD-101"
                     />
                   </div>
 
@@ -296,7 +298,7 @@ export default function AddProductPage() {
                   Pricing Information (₹)
                 </h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
                     <label htmlFor="purchasePrice" className="form-label font-semibold text-slate-700 block mb-1">
                       Purchase Price (₹)
@@ -349,6 +351,25 @@ export default function AddProductPage() {
                         min="0"
                         value={mrp}
                         onChange={(e) => setMrp(e.target.value)}
+                        className="form-input w-full pl-8 rounded-lg border-slate-300 font-medium"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="adDisc" className="form-label font-semibold text-slate-700 block mb-1">
+                      AD Disc (₹/%)
+                    </label>
+                    <div className="relative">
+                      <Tag className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        id="adDisc"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={adDisc}
+                        onChange={(e) => setAdDisc(e.target.value)}
                         className="form-input w-full pl-8 rounded-lg border-slate-300 font-medium"
                         placeholder="0.00"
                       />

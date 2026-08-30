@@ -13,6 +13,7 @@ import {
 } from '@/lib/ordersStore';
 import { getStoredDealers, Dealer } from '@/lib/dealersStore';
 import { getStoredAssociates, Associate } from '@/lib/associatesStore';
+import { getStoredGroups, Group } from '@/lib/groupsStore';
 import {
   ShoppingCart,
   Calendar,
@@ -33,6 +34,8 @@ import {
   AlertTriangle,
   Layers,
   Building,
+  Users,
+  CreditCard,
 } from 'lucide-react';
 
 const getTodayDateString = () => {
@@ -43,16 +46,26 @@ const getTodayDateString = () => {
   return `${year}-${month}-${day}`;
 };
 
+const getLastThreeWeeksDateString = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 21);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 function OrdersDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Filter States (Firm option added, dates default to today)
-  const [fromDate, setFromDate] = useState<string>(searchParams?.get('from') ?? getTodayDateString());
+  // Filter States (Firm option added, dates default to last 3 weeks)
+  const [fromDate, setFromDate] = useState<string>(searchParams?.get('from') ?? getLastThreeWeeksDateString());
   const [toDate, setToDate] = useState<string>(searchParams?.get('to') ?? getTodayDateString());
   const [firm, setFirm] = useState<string>(searchParams?.get('firm') || 'ALL');
   const [approvingStatus, setApprovingStatus] = useState<string>('ALL');
   const [packingStatus, setPackingStatus] = useState<string>('ALL');
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(searchParams?.get('groupId') || 'ALL');
   const [selectedDealerId, setSelectedDealerId] = useState<string>('ALL');
   const [selectedAssociateId, setSelectedAssociateId] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -61,10 +74,28 @@ function OrdersDashboardContent() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [associates, setAssociates] = useState<Associate[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
 
-  // Load initial metadata options (dealers & associates)
+  // Current timestamp initialized once per mount for pure render comparisons
+  const [currentTimestamp] = useState<number>(() => Date.now());
+
+  // Helper to determine if delivered_date > 15 days from now and balance_amount > 0
+  const isDeliveredOverdue = (deliveredDateStr?: string | null, balance?: number) => {
+    const bal = Number(balance || 0);
+    if (bal <= 0 || !deliveredDateStr) return false;
+    try {
+      const deliveredTime = new Date(deliveredDateStr).getTime();
+      if (isNaN(deliveredTime)) return false;
+      const diffDays = (currentTimestamp - deliveredTime) / (1000 * 60 * 60 * 24);
+      return diffDays > 15;
+    } catch {
+      return false;
+    }
+  };
+
+  // Load initial metadata options (dealers, associates, groups)
   useEffect(() => {
     let isMounted = true;
 
@@ -72,14 +103,16 @@ function OrdersDashboardContent() {
       setIsLoading(true);
       setError('');
       try {
-        const [dealersData, associatesData] = await Promise.all([
+        const [dealersData, associatesData, groupsData] = await Promise.all([
           getStoredDealers(),
           getStoredAssociates(),
+          getStoredGroups(),
         ]);
 
         if (isMounted) {
           setDealers(dealersData);
           setAssociates(associatesData);
+          setGroups(groupsData);
         }
       } catch (err) {
         console.error('Failed to load metadata for filters:', err);
@@ -113,6 +146,7 @@ function OrdersDashboardContent() {
           associateStatus: 'Submitted', // ALWAYS filter submitted orders only
           approvingStatus,
           packingStatus,
+          groupId: selectedGroupId,
           dealerId: selectedDealerId,
           associateId: selectedAssociateId,
         };
@@ -141,7 +175,7 @@ function OrdersDashboardContent() {
     return () => {
       isMounted = false;
     };
-  }, [firm, fromDate, toDate, approvingStatus, packingStatus, selectedDealerId, selectedAssociateId, refreshKey]);
+  }, [firm, fromDate, toDate, approvingStatus, packingStatus, selectedGroupId, selectedDealerId, selectedAssociateId, refreshKey]);
 
   // Client-side text search
   const filteredOrders = useMemo(() => {
@@ -152,7 +186,7 @@ function OrdersDashboardContent() {
       const num = (o.order_number || '').toLowerCase();
       const dealer = (o.dealer?.name || o.dealer?.shop_name || '').toLowerCase();
       const associate = (o.associate?.name || '').toLowerCase();
-      const packedBy = (o.packed_by_profile?.name || '').toLowerCase();
+      const groupName = (o.dealer?.group?.group_name || '').toLowerCase();
       const notes = (o.notes || '').toLowerCase();
       const firmStr = (o.firm || 'LE').toLowerCase();
 
@@ -160,7 +194,7 @@ function OrdersDashboardContent() {
         num.includes(q) ||
         dealer.includes(q) ||
         associate.includes(q) ||
-        packedBy.includes(q) ||
+        groupName.includes(q) ||
         notes.includes(q) ||
         firmStr.includes(q)
       );
@@ -173,11 +207,12 @@ function OrdersDashboardContent() {
   }, [filteredOrders]);
 
   const clearFilters = () => {
-    setFromDate(getTodayDateString());
+    setFromDate(getLastThreeWeeksDateString());
     setToDate(getTodayDateString());
     setFirm('ALL');
     setApprovingStatus('ALL');
     setPackingStatus('ALL');
+    setSelectedGroupId('ALL');
     setSelectedDealerId('ALL');
     setSelectedAssociateId('ALL');
     setSearchQuery('');
@@ -324,6 +359,23 @@ function OrdersDashboardContent() {
             </select>
           </div>
 
+          {/* Group Select Dropdown */}
+          <div className="bg-slate-50/70 border border-slate-200/90 rounded-xl p-3 hover:border-slate-300 focus-within:border-indigo-500 focus-within:bg-white transition-all space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 block">Group</label>
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+            >
+              <option value="ALL">All Groups</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.group_name} ({g.group_id})
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Date From */}
           <div className="bg-slate-50/70 border border-slate-200/90 rounded-xl p-3 hover:border-slate-300 focus-within:border-indigo-500 focus-within:bg-white transition-all space-y-1.5">
             <label className="text-xs font-semibold text-slate-700 block">From Date</label>
@@ -423,7 +475,7 @@ function OrdersDashboardContent() {
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search order #, dealer, associate, firm..."
+                placeholder="Search order #, dealer, associate, group, firm..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
@@ -450,7 +502,7 @@ function OrdersDashboardContent() {
             <p className="text-xs sm:text-sm text-slate-500 mt-1.5 leading-relaxed">
               There are currently no submitted dealer orders matching your selected criteria.
             </p>
-            {(fromDate || toDate || approvingStatus !== 'ALL' || packingStatus !== 'ALL' || selectedDealerId !== 'ALL' || selectedAssociateId !== 'ALL' || searchQuery) && (
+            {(fromDate || toDate || approvingStatus !== 'ALL' || packingStatus !== 'ALL' || selectedGroupId !== 'ALL' || selectedDealerId !== 'ALL' || selectedAssociateId !== 'ALL' || searchQuery) && (
               <button
                 onClick={clearFilters}
                 className="btn-base btn-secondary text-xs mt-5 px-4 py-2 cursor-pointer hover:border-slate-300"
@@ -471,9 +523,9 @@ function OrdersDashboardContent() {
                     <th className="py-4 px-5">Dealer Name</th>
                     <th className="py-4 px-5">Associate</th>
                     <th className="py-4 px-5 text-center">No. of Items</th>
-                    <th className="py-4 px-5">Packed By</th>
                     <th className="py-4 px-5">Approval / Packing Status</th>
                     <th className="py-4 px-5 text-right">Total Amount</th>
+                    <th className="py-4 px-5 text-right">Balance Amount</th>
                     <th className="py-4 px-5 text-center">Action</th>
                   </tr>
                 </thead>
@@ -521,6 +573,11 @@ function OrdersDashboardContent() {
                             Code: {order.dealer.dealer_code}
                           </div>
                         )}
+                        {order.dealer?.group?.group_name && (
+                          <div className="text-[11px] text-indigo-600 font-medium pl-5">
+                            Group: {order.dealer.group.group_name}
+                          </div>
+                        )}
                       </td>
 
                       {/* Associate */}
@@ -539,18 +596,6 @@ function OrdersDashboardContent() {
                           <Package className="w-3.5 h-3.5 text-indigo-600" />
                           <span>{order.item_count ?? 0} {order.item_count === 1 ? 'Item' : 'Items'}</span>
                         </span>
-                      </td>
-
-                      {/* Packed By */}
-                      <td className="py-4 px-5">
-                        {order.packed_by_profile ? (
-                          <div className="text-slate-800 font-medium flex items-center gap-1">
-                            <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-                            <span>{order.packed_by_profile.name}</span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-slate-400 italic">Not Assigned</span>
-                        )}
                       </td>
 
                       {/* Approval & Packing Statuses */}
@@ -574,15 +619,43 @@ function OrdersDashboardContent() {
                         })}
                       </td>
 
+                      {/* Balance Amount */}
+                      <td className="py-4 px-5 text-right font-mono text-sm">
+                        {(() => {
+                          const bal = Number(order.balance_amount ?? 0);
+                          const isOverdue = isDeliveredOverdue(order.delivered_date, bal);
+                          return (
+                            <span
+                              className={
+                                isOverdue
+                                  ? 'text-red-600 font-extrabold'
+                                  : 'text-slate-700 font-bold'
+                              }
+                            >
+                              ₹{bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          );
+                        })()}
+                      </td>
+
                       {/* Action */}
                       <td className="py-4 px-5 text-center">
-                        <button
-                          onClick={() => router.push(`/admin/openOrder?id=${order.id}`)}
-                          className="btn-base btn-primary py-1.5 px-3.5 text-xs inline-flex items-center gap-1.5 shadow-2xs cursor-pointer hover:bg-indigo-700 transition-all"
-                        >
-                          <span>Open Order</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </button>
+                        <div className="flex flex-col items-center gap-1.5 justify-center">
+                          <button
+                            onClick={() => router.push(`/admin/openOrder?id=${order.id}`)}
+                            className="btn-base btn-primary py-1.5 px-3 text-xs w-full inline-flex items-center justify-center gap-1 shadow-2xs cursor-pointer hover:bg-indigo-700 transition-all"
+                          >
+                            <span>Open Order</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => router.push(`/admin/orderpayments?orderId=${order.id}`)}
+                            className="py-1 px-2.5 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 w-full inline-flex items-center justify-center gap-1 cursor-pointer transition-all shadow-2xs"
+                          >
+                            <CreditCard className="w-3 h-3 text-emerald-600" />
+                            <span>Payments</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -627,6 +700,24 @@ function OrdersDashboardContent() {
                           minimumFractionDigits: 2,
                         })}
                       </div>
+                      <div className="text-xs font-mono mt-0.5">
+                        <span className="text-slate-500 mr-1">Bal:</span>
+                        {(() => {
+                          const bal = Number(order.balance_amount ?? 0);
+                          const isOverdue = isDeliveredOverdue(order.delivered_date, bal);
+                          return (
+                            <span
+                              className={
+                                isOverdue
+                                  ? 'text-red-600 font-extrabold'
+                                  : 'text-slate-700 font-bold'
+                              }
+                            >
+                              ₹{bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md mt-1 border border-slate-200/80">
                         <Package className="w-3 h-3 text-indigo-600" />
                         {order.item_count ?? 0} {order.item_count === 1 ? 'Item' : 'Items'}
@@ -640,9 +731,13 @@ function OrdersDashboardContent() {
                       <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <span>{order.dealer?.name || 'Dealer N/A'}</span>
                     </div>
+                    {order.dealer?.group?.group_name && (
+                      <div className="text-indigo-600 text-[11px] font-medium">
+                        Group: {order.dealer.group.group_name}
+                      </div>
+                    )}
                     <div className="text-slate-600 text-[11px] flex items-center justify-between">
                       <span>Associate: <strong className="text-slate-800">{order.associate?.name || 'N/A'}</strong></span>
-                      <span>Packed By: <strong className="text-slate-800">{order.packed_by_profile?.name || 'Not assigned'}</strong></span>
                     </div>
                   </div>
 
@@ -652,7 +747,14 @@ function OrdersDashboardContent() {
                     {renderPackingStatusBadge(order.packing_status)}
                   </div>
 
-                  <div className="pt-2 flex justify-end">
+                  <div className="pt-2 flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => router.push(`/admin/orderpayments?orderId=${order.id}`)}
+                      className="py-1.5 px-3 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 flex items-center gap-1 cursor-pointer transition-all shadow-2xs"
+                    >
+                      <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Payments</span>
+                    </button>
                     <button
                       onClick={() => router.push(`/admin/openOrder?id=${order.id}`)}
                       className="btn-base btn-primary text-xs py-1.5 px-3.5 flex items-center gap-1.5 cursor-pointer"

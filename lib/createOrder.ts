@@ -6,6 +6,11 @@ export interface CreateOrderItemInput {
   product_id: string;
   requested_quantity: number;
   selling_price: number;
+  mrp?: number;
+  associate_mrp?: number;
+  discount?: number;
+  ad_discount?: number;
+  notes?: string;
 }
 
 export interface CreateOrderInput {
@@ -163,6 +168,11 @@ export async function saveOrderToDatabase(input: CreateOrderInput): Promise<{
         released_quantity: 0,
         pending_quantity: Number(item.requested_quantity) || 0,
         selling_price: Number(item.selling_price) || 0,
+        mrp: Number(item.mrp || item.associate_mrp || 0),
+        associate_mrp: Number(item.associate_mrp || item.mrp || 0),
+        discount: Number(item.discount || 0),
+        ad_discount: Number(item.ad_discount || 0),
+        notes: item.notes || null,
         line_total: lineTotal,
       };
     });
@@ -372,6 +382,11 @@ export async function updateOrderInDatabase(
         released_quantity: 0,
         pending_quantity: Number(item.requested_quantity) || 0,
         selling_price: Number(item.selling_price) || 0,
+        mrp: Number(item.mrp || item.associate_mrp || 0),
+        associate_mrp: Number(item.associate_mrp || item.mrp || 0),
+        discount: Number(item.discount || 0),
+        ad_discount: Number(item.ad_discount || 0),
+        notes: item.notes || null,
         line_total: lineTotal,
       };
     });
@@ -442,6 +457,7 @@ export async function getAssociateOrdersList(filters?: {
   endDate?: string;
   search?: string;
   dealerId?: string;
+  groupId?: string;
   associateStatus?: string;
   approvingStatus?: string;
   packingStatus?: string;
@@ -451,7 +467,7 @@ export async function getAssociateOrdersList(filters?: {
       .from('orders')
       .select(`
         *,
-        dealer:dealers(id, name, dealer_code, mobile)
+        dealer:dealers(id, name, dealer_code, mobile, group_id, group:groups(id, group_id, group_name))
       `)
       .order('created_at', { ascending: false });
 
@@ -513,6 +529,13 @@ export async function getAssociateOrdersList(filters?: {
       } catch (e) {
         console.warn('Local storage orders merge error:', e);
       }
+    }
+
+    // Filter in JS for group if provided
+    if (filters?.groupId && filters.groupId !== 'ALL') {
+      list = list.filter(
+        (o) => o.dealer?.group_id === filters.groupId || o.dealer?.group?.id === filters.groupId
+      );
     }
 
     // Filter in JS for text search if provided

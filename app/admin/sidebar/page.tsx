@@ -12,6 +12,7 @@ import {
   Users,
   UserCheck,
   Building2,
+  Layers,
   ChevronDown,
   ChevronRight,
   Menu,
@@ -29,6 +30,7 @@ export default function AdminSidebar() {
     if (pathname?.includes('/backorder_products') || pathname?.includes('/addbackorderproduct') || pathname?.includes('/openbackorderproduct')) return 'back-products';
     if (pathname?.includes('/orders') || pathname?.includes('/openOrder')) return 'orders';
     if (pathname === '/admin/dashboard' || pathname === '/admin') return 'home';
+    if (pathname?.includes('/groups')) return 'groups';
     if (pathname?.includes('/staff')) return 'staff';
     if (pathname?.includes('/addstaff')) return 'staff';
     if (pathname?.includes('/associates')) return 'associates';
@@ -183,7 +185,21 @@ export default function AdminSidebar() {
           <span>Dealers</span>
         </Link>
 
-        {/* 6. Associates */}
+        {/* 6. Groups */}
+        <Link
+          href="/admin/groups/dashboard"
+          onClick={() => setMobileOpen(false)}
+          className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+            selected === 'groups'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+          }`}
+        >
+          <Layers className="w-4 h-4 shrink-0" />
+          <span>Groups</span>
+        </Link>
+
+        {/* 7. Associates */}
         <Link
           href="/admin/associates/dashboard"
           onClick={() => setMobileOpen(false)}
@@ -197,7 +213,7 @@ export default function AdminSidebar() {
           <span>Associates</span>
         </Link>
 
-        {/* 7. Staff */}
+        {/* 8. Staff */}
         <Link
           href="/admin/staff/dashboard"
           onClick={() => setMobileOpen(false)}

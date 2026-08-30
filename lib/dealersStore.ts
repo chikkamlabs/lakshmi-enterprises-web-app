@@ -3,6 +3,12 @@ import { supabase } from './supabase';
 export interface Dealer {
   id: string;
   dealer_code: string;
+  group_id?: string | null;
+  group?: {
+    id: string;
+    group_id: string;
+    group_name: string;
+  } | null;
   name: string;
   mobile: string | null;
   shop_name: string | null;
@@ -26,7 +32,10 @@ export async function getStoredDealers(): Promise<Dealer[]> {
   try {
     const { data, error } = await supabase
       .from('dealers')
-      .select('*')
+      .select(`
+        *,
+        group:groups(id, group_id, group_name)
+      `)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -53,6 +62,7 @@ export async function addDealer(
       .insert([
         {
           dealer_code: newDealer.dealer_code,
+          group_id: newDealer.group_id || null,
           name: newDealer.name,
           mobile: newDealer.mobile || null,
           shop_name: newDealer.shop_name || null,
@@ -64,7 +74,10 @@ export async function addDealer(
           status: newDealer.status ?? true,
         },
       ])
-      .select()
+      .select(`
+        *,
+        group:groups(id, group_id, group_name)
+      `)
       .single();
 
     if (error) {
@@ -93,6 +106,9 @@ export async function updateDealer(
 
     if (updatedFields.dealer_code !== undefined) {
       payload.dealer_code = updatedFields.dealer_code;
+    }
+    if (updatedFields.group_id !== undefined) {
+      payload.group_id = updatedFields.group_id;
     }
     if (updatedFields.name !== undefined) {
       payload.name = updatedFields.name;
@@ -126,7 +142,10 @@ export async function updateDealer(
       .from('dealers')
       .update(payload)
       .eq('id', id)
-      .select()
+      .select(`
+        *,
+        group:groups(id, group_id, group_name)
+      `)
       .single();
 
     if (error) {
@@ -149,7 +168,10 @@ export async function getDealerById(id: string): Promise<Dealer | null> {
   try {
     const { data, error } = await supabase
       .from('dealers')
-      .select('*')
+      .select(`
+        *,
+        group:groups(id, group_id, group_name)
+      `)
       .eq('id', id)
       .maybeSingle();
 

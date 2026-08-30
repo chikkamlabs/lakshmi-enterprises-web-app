@@ -23,6 +23,7 @@ import StaffHeader from '../header/page';
 import { getOrders, Order, getOrderById } from '../../../lib/ordersStore';
 import { getStoredDealers, Dealer } from '../../../lib/dealersStore';
 import { getStoredAssociates, Associate } from '../../../lib/associatesStore';
+import { getStoredGroups, Group } from '../../../lib/groupsStore';
 
 function getTodayString(): string {
   const d = new Date();
@@ -42,6 +43,7 @@ function StaffDashboardContent() {
   // Filters State
   const [approvingStatusFilter, setApprovingStatusFilter] = useState<'ALL' | 'Partially Approved' | 'Approved'>('ALL');
   const [packingStatusFilter, setPackingStatusFilter] = useState<'ALL' | 'Pending' | 'Partially Packed' | 'Packed'>('ALL');
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('ALL');
 
   // Date Filter State (default to today)
   const [fromDate, setFromDate] = useState<string>(getTodayString());
@@ -61,12 +63,15 @@ function StaffDashboardContent() {
   const [selectedAssociate, setSelectedAssociate] = useState<Associate | null>(null);
   const [associateDropdownOpen, setAssociateDropdownOpen] = useState<boolean>(false);
 
+  // Groups State
+  const [groups, setGroups] = useState<Group[]>([]);
+
   // Selected Order for Details View (Drawer/Modal)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [loadingDetails, setLoadingDetails] = useState<boolean>(false);
   const [orderDetailsData, setOrderDetailsData] = useState<Order | null>(null);
 
-  // Fetch Dealers and Associates
+  // Fetch Dealers, Associates and Groups
   useEffect(() => {
     let isMounted = true;
 
@@ -75,14 +80,16 @@ function StaffDashboardContent() {
       setLoadingAssociates(true);
 
       try {
-        const [dealersData, associatesData] = await Promise.all([
+        const [dealersData, associatesData, groupsData] = await Promise.all([
           getStoredDealers(),
           getStoredAssociates(),
+          getStoredGroups(),
         ]);
 
         if (isMounted) {
           setDealers(dealersData);
           setAssociates(associatesData);
+          setGroups(groupsData);
         }
       } catch (err) {
         console.error('Failed to load filter options:', err);
@@ -111,6 +118,7 @@ function StaffDashboardContent() {
         const data = await getOrders({
           dealerId: selectedDealer?.id,
           associateId: selectedAssociate?.id,
+          groupId: selectedGroupId !== 'ALL' ? selectedGroupId : undefined,
           fromDate: fromDate || undefined,
           toDate: toDate || undefined,
           approvingStatus: approvingStatusFilter === 'ALL' ? undefined : approvingStatusFilter,
@@ -129,6 +137,13 @@ function StaffDashboardContent() {
           if (packingStatusFilter !== 'ALL') {
             staffApprovedOnly = staffApprovedOnly.filter(
               (o) => (o.packing_status || 'Pending').toLowerCase() === packingStatusFilter.toLowerCase()
+            );
+          }
+
+          // Additional group filter if set
+          if (selectedGroupId !== 'ALL') {
+            staffApprovedOnly = staffApprovedOnly.filter(
+              (o) => o.dealer?.group_id === selectedGroupId || o.dealer?.group?.id === selectedGroupId
             );
           }
 
@@ -151,6 +166,7 @@ function StaffDashboardContent() {
   }, [
     selectedDealer,
     selectedAssociate,
+    selectedGroupId,
     fromDate,
     toDate,
     approvingStatusFilter,
@@ -186,6 +202,7 @@ function StaffDashboardContent() {
   const handleResetFilters = () => {
     setApprovingStatusFilter('ALL');
     setPackingStatusFilter('ALL');
+    setSelectedGroupId('ALL');
     setSelectedDealer(null);
     setDealerSearch('');
     setSelectedAssociate(null);
@@ -199,6 +216,7 @@ function StaffDashboardContent() {
   const hasActiveFilters =
     approvingStatusFilter !== 'ALL' ||
     packingStatusFilter !== 'ALL' ||
+    selectedGroupId !== 'ALL' ||
     selectedDealer !== null ||
     selectedAssociate !== null ||
     fromDate !== todayStr ||
@@ -254,8 +272,8 @@ function StaffDashboardContent() {
             )}
           </div>
 
-          {/* Compact 6-Column Grid Layout on Desktop / 2-Column on Mobile */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {/* Compact 7-Column Grid Layout on Desktop / 2-Column on Mobile */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
             {/* 1. From Date */}
             <div>
               <label className="text-[10px] font-bold text-slate-600 mb-0.5 flex items-center gap-1">
@@ -323,7 +341,26 @@ function StaffDashboardContent() {
               </select>
             </div>
 
-            {/* 5. DLR (Dealer Search/Select) */}
+            {/* 5. Group Filter */}
+            <div>
+              <label className="text-[10px] font-bold text-slate-600 mb-0.5 flex items-center gap-1">
+                <Layers className="w-3 h-3 text-slate-400" /> Group
+              </label>
+              <select
+                value={selectedGroupId}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
+                className="input-field text-[11px] py-1 px-1.5 h-7 bg-slate-50 border-slate-200 focus:bg-white"
+              >
+                <option value="ALL">All Groups</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.group_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 6. DLR (Dealer Search/Select) */}
             <div className="relative">
               <label className="text-[10px] font-bold text-slate-600 mb-0.5 flex items-center gap-1">
                 <Store className="w-3 h-3 text-slate-400" /> DLR

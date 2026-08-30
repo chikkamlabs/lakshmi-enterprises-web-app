@@ -22,15 +22,15 @@ export default function AssociateBottomNavigation() {
     },
     {
       label: 'Dealers',
-      href: '/associate/dashboard',
+      href: '/associate/dealers',
       icon: Store,
-      isActive: false,
+      isActive: pathname === '/associate/dealers' || pathname.startsWith('/associate/dealers'),
     },
     {
       label: 'Products',
-      href: '/associate/dashboard',
+      href: '/associate/products',
       icon: Package,
-      isActive: false,
+      isActive: pathname === '/associate/products' || pathname.startsWith('/associate/products'),
     },
   ];
 

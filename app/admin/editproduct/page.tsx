@@ -45,6 +45,7 @@ function EditProductFormContent() {
   const [purchasePrice, setPurchasePrice] = useState('0.00');
   const [sellingPrice, setSellingPrice] = useState('0.00');
   const [mrp, setMrp] = useState('0.00');
+  const [adDisc, setAdDisc] = useState('0.00');
   const [currentStock, setCurrentStock] = useState('0');
   const [lowStock, setLowStock] = useState('10');
   const [unit, setUnit] = useState('pcs');
@@ -85,6 +86,7 @@ function EditProductFormContent() {
           setPurchasePrice(String(prod.purchase_price ?? 0));
           setSellingPrice(String(prod.selling_price ?? 0));
           setMrp(String(prod.mrp ?? 0));
+          setAdDisc(String(prod.ad_disc ?? 0));
           setCurrentStock(String(prod.current_stock ?? 0));
           setLowStock(String(prod.low_stock ?? 10));
           setUnit(prod.unit || 'pcs');
@@ -134,6 +136,7 @@ function EditProductFormContent() {
         purchase_price: Number(purchasePrice) || 0,
         selling_price: Number(sellingPrice) || 0,
         mrp: Number(mrp) || 0,
+        ad_disc: Number(adDisc) || 0,
         current_stock: Math.max(0, parseInt(currentStock, 10) || 0),
         low_stock: Math.max(0, parseInt(lowStock, 10) || 10),
         unit: unit.trim() || 'pcs',
@@ -335,7 +338,7 @@ function EditProductFormContent() {
               Pricing Information (₹)
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label htmlFor="editPurchasePrice" className="form-label font-semibold text-slate-700 block mb-1">
                   Purchase Price (₹)
@@ -388,6 +391,25 @@ function EditProductFormContent() {
                     min="0"
                     value={mrp}
                     onChange={(e) => setMrp(e.target.value)}
+                    className="form-input w-full pl-8 rounded-lg border-slate-300 font-medium"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="editAdDisc" className="form-label font-semibold text-slate-700 block mb-1">
+                  AD Disc (₹/%)
+                </label>
+                <div className="relative">
+                  <Tag className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    id="editAdDisc"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={adDisc}
+                    onChange={(e) => setAdDisc(e.target.value)}
                     className="form-input w-full pl-8 rounded-lg border-slate-300 font-medium"
                     placeholder="0.00"
                   />

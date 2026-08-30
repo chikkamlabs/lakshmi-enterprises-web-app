@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, Suspense } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -9,18 +9,14 @@ import {
   Plus,
   Trash2,
   CheckCircle2,
-  Save,
-  Send,
-  Store,
-  Package,
+  AlertCircle,
   Loader2,
   X,
-  ChevronDown,
-  AlertCircle,
   ShoppingBag,
   Minus,
   Lock,
   Building,
+  Check,
 } from 'lucide-react';
 import {
   getDealersForOrder,
@@ -30,14 +26,21 @@ import {
   updateOrderInDatabase,
   ProductSearchResult,
 } from '../../../lib/createOrder';
+import { updateSingleOrderItem } from '../../../lib/ordersStore';
 import { Dealer } from '../../../lib/dealersStore';
 import AssociateHeader from '../header/page';
 import AssociateBottomNavigation from '../buttomnavigation/page';
 
 export interface SelectedOrderItem {
+  id?: string;
   product: ProductSearchResult;
   requested_quantity: number;
+  mrp: number;
+  associate_mrp: number;
+  discount: number;
   selling_price: number;
+  notes: string;
+  isDirty?: boolean;
 }
 
 function CreateOrderContent() {
@@ -71,6 +74,8 @@ function CreateOrderContent() {
   // State: Order Items
   const [orderItems, setOrderItems] = useState<SelectedOrderItem[]>([]);
   const [notes, setNotes] = useState<string>('');
+  const [savingItemKey, setSavingItemKey] = useState<string | null>(null);
+  const [savedItemKeys, setSavedItemKeys] = useState<{ [key: string]: boolean }>({});
 
   // State: Form Status
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -144,16 +149,41 @@ function CreateOrderContent() {
           }
 
           if (result.items && result.items.length > 0) {
-            const mapped: SelectedOrderItem[] = result.items.map((it) => ({
-              product: it.product || {
-                id: it.product_id,
-                name: 'Product ID: ' + it.product_id,
-                product_code: it.product_id,
-                selling_price: it.selling_price || 0,
-              },
-              requested_quantity: it.requested_quantity || 1,
-              selling_price: it.selling_price || 0,
-            }));
+            // Initially load database values exactly without recalculating
+            const mapped: SelectedOrderItem[] = result.items.map((it) => {
+              const prodMrp = Number(it.product?.mrp ?? 0);
+              const rawMrp = Number(it.mrp !== undefined && it.mrp !== null ? it.mrp : prodMrp);
+              const rawAssocMrp = Number(
+                it.associate_mrp !== undefined && it.associate_mrp !== null
+                  ? it.associate_mrp
+                  : (it.mrp ?? prodMrp)
+              );
+              const rawDisc = Number(it.discount ?? 0);
+              const rawSp = Number(
+                it.selling_price !== undefined && it.selling_price !== null
+                  ? it.selling_price
+                  : rawDisc > 0
+                  ? rawAssocMrp - (rawAssocMrp * rawDisc) / 100
+                  : rawAssocMrp
+              );
+              return {
+                id: it.id,
+                product: it.product || {
+                  id: it.product_id,
+                  name: 'Product ID: ' + it.product_id,
+                  product_code: it.product_id,
+                  selling_price: rawSp,
+                  mrp: rawMrp,
+                },
+                requested_quantity: it.requested_quantity || 1,
+                mrp: rawMrp,
+                associate_mrp: rawAssocMrp,
+                discount: rawDisc,
+                selling_price: rawSp,
+                notes: it.notes || '',
+                isDirty: false,
+              };
+            });
             setOrderItems(mapped);
           }
         } else {
@@ -164,9 +194,7 @@ function CreateOrderContent() {
           setErrorMsg(err?.message || 'Failed to load order.');
         }
       } finally {
-        if (isMounted) {
-          setLoadingOrder(false);
-        }
+        if (isMounted) setLoadingOrder(false);
       }
     }
 
@@ -177,49 +205,60 @@ function CreateOrderContent() {
     };
   }, [editOrderId]);
 
-  // Filtered dealers list
+  // Filter Dealers
   const filteredDealers = useMemo(() => {
     if (!dealerSearch.trim()) return dealers;
-    const q = dealerSearch.toLowerCase().trim();
+    const q = dealerSearch.toLowerCase();
     return dealers.filter(
       (d) =>
         d.name.toLowerCase().includes(q) ||
-        (d.shop_name && d.shop_name.toLowerCase().includes(q)) ||
         d.dealer_code.toLowerCase().includes(q) ||
-        (d.mobile && d.mobile.toLowerCase().includes(q))
+        (d.mobile && d.mobile.includes(q))
     );
   }, [dealers, dealerSearch]);
 
-  // Handle product search filter
+  // Filter Products
   const filteredProducts = useMemo(() => {
-    if (!productSearch.trim()) return products.slice(0, 10);
-    const q = productSearch.toLowerCase().trim();
+    if (!productSearch.trim()) return products.slice(0, 30);
+    const q = productSearch.toLowerCase();
     return products.filter(
       (p) =>
-        (p.product_code && p.product_code.toLowerCase().includes(q)) ||
-        (p.id && p.id.toLowerCase().includes(q)) ||
-        (p.name && p.name.toLowerCase().includes(q)) ||
-        (p.company_name && p.company_name.toLowerCase().includes(q)) ||
-        (p.barcode && p.barcode.toLowerCase().includes(q))
+        p.name.toLowerCase().includes(q) ||
+        p.product_code.toLowerCase().includes(q) ||
+        (p.company_name && p.company_name.toLowerCase().includes(q))
     );
   }, [products, productSearch]);
 
-  // Add Product to Order Items
+  // Add Product to Order
   const handleAddProduct = (product: ProductSearchResult) => {
     if (isReadOnly) return;
     setOrderItems((prev) => {
-      const existingIdx = prev.findIndex((item) => item.product.id === product.id);
-      if (existingIdx !== -1) {
+      const existingIndex = prev.findIndex((it) => it.product.id === product.id);
+      if (existingIndex > -1) {
         const updated = [...prev];
-        updated[existingIdx].requested_quantity += 1;
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          requested_quantity: updated[existingIndex].requested_quantity + 1,
+          isDirty: true,
+        };
         return updated;
       }
+      const prodMrp = Number(product.mrp || product.selling_price || 0);
+      const assocMrp = prodMrp;
+      const initialDiscount = 0;
+      const initialSellingPrice = Number(product.selling_price || prodMrp);
+
       return [
         ...prev,
         {
           product,
           requested_quantity: 1,
-          selling_price: Number(product.selling_price) || 0,
+          mrp: prodMrp,
+          associate_mrp: assocMrp,
+          discount: initialDiscount,
+          selling_price: initialSellingPrice,
+          notes: '',
+          isDirty: true,
         },
       ];
     });
@@ -233,9 +272,137 @@ function CreateOrderContent() {
     const qty = Math.max(1, isNaN(newQty) ? 1 : newQty);
     setOrderItems((prev) =>
       prev.map((item) =>
-        item.product.id === productId ? { ...item, requested_quantity: qty } : item
+        item.product.id === productId ? { ...item, requested_quantity: qty, isDirty: true } : item
       )
     );
+  };
+
+  // Update Product MRP (order_items.mrp)
+  const handleMrpChange = (productId: string, newMrp: number) => {
+    if (isReadOnly) return;
+    const mrp = Math.max(0, isNaN(newMrp) ? 0 : newMrp);
+    setOrderItems((prev) =>
+      prev.map((item) => {
+        if (item.product.id === productId) {
+          return {
+            ...item,
+            mrp: mrp,
+            isDirty: true,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  // Update Associate MRP (when edited, recalculates selling price based on discount)
+  const handleAssociateMrpChange = (productId: string, newMrp: number) => {
+    if (isReadOnly) return;
+    const mrp = Math.max(0, isNaN(newMrp) ? 0 : newMrp);
+    setOrderItems((prev) =>
+      prev.map((item) => {
+        if (item.product.id === productId) {
+          const sp = item.discount > 0 ? mrp - (mrp * item.discount) / 100 : mrp;
+          return {
+            ...item,
+            associate_mrp: mrp,
+            selling_price: Math.round(sp * 100) / 100,
+            isDirty: true,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  // Update Discount (recalculates selling_price from associate_mrp)
+  const handleDiscountChange = (productId: string, newDisc: number) => {
+    if (isReadOnly) return;
+    const disc = Math.max(0, isNaN(newDisc) ? 0 : newDisc);
+    setOrderItems((prev) =>
+      prev.map((item) => {
+        if (item.product.id === productId) {
+          const mrp = item.associate_mrp;
+          const sp = disc > 0 ? mrp - (mrp * disc) / 100 : mrp;
+          return {
+            ...item,
+            discount: disc,
+            selling_price: Math.round(sp * 100) / 100,
+            isDirty: true,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  // Directly edit Selling Price (sets discount to 0)
+  const handleSellingPriceChange = (productId: string, newSp: number) => {
+    if (isReadOnly) return;
+    const sp = Math.max(0, isNaN(newSp) ? 0 : newSp);
+    setOrderItems((prev) =>
+      prev.map((item) => {
+        if (item.product.id === productId) {
+          return {
+            ...item,
+            selling_price: sp,
+            discount: 0,
+            isDirty: true,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  // Update Item Notes
+  const handleItemNotesChange = (productId: string, newNotes: string) => {
+    if (isReadOnly) return;
+    setOrderItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, notes: newNotes, isDirty: true } : item
+      )
+    );
+  };
+
+  // Save single item row to database
+  const handleSaveSingleItem = async (item: SelectedOrderItem) => {
+    if (isReadOnly) return;
+    const itemKey = item.id || item.product.id;
+    setSavingItemKey(itemKey);
+
+    try {
+      if (isEditing && editOrderId && item.id) {
+        await updateSingleOrderItem({
+          itemId: item.id,
+          orderId: editOrderId,
+          requested_quantity: item.requested_quantity,
+          mrp: item.mrp,
+          associate_mrp: item.associate_mrp,
+          discount: item.discount,
+          selling_price: item.selling_price,
+          notes: item.notes,
+          line_total: item.requested_quantity * item.selling_price,
+        });
+      }
+
+      setSavedItemKeys((prev) => ({ ...prev, [itemKey]: true }));
+      setTimeout(() => {
+        setSavedItemKeys((prev) => ({ ...prev, [itemKey]: false }));
+      }, 2500);
+
+      setOrderItems((prev) =>
+        prev.map((it) =>
+          (it.id && it.id === item.id) || it.product.id === item.product.id
+            ? { ...it, isDirty: false }
+            : it
+        )
+      );
+    } catch (err) {
+      console.error('Failed to save single order item:', err);
+    } finally {
+      setSavingItemKey(null);
+    }
   };
 
   // Remove Item
@@ -243,6 +410,14 @@ function CreateOrderContent() {
     if (isReadOnly) return;
     setOrderItems((prev) => prev.filter((item) => item.product.id !== productId));
   };
+
+  // Total order amount (sum of line totals)
+  const totalOrderAmount = useMemo(() => {
+    return orderItems.reduce(
+      (sum, item) => sum + (Number(item.selling_price) || 0) * (Number(item.requested_quantity) || 0),
+      0
+    );
+  }, [orderItems]);
 
   // Save / Update Order Action
   const handleSaveOrder = async (associateStatus: 'Draft' | 'Submitted') => {
@@ -279,6 +454,10 @@ function CreateOrderContent() {
             product_id: item.product.id,
             requested_quantity: item.requested_quantity,
             selling_price: item.selling_price,
+            associate_mrp: item.associate_mrp,
+            mrp: item.mrp,
+            discount: item.discount,
+            notes: item.notes.trim() || undefined,
           })),
         });
 
@@ -302,6 +481,10 @@ function CreateOrderContent() {
             product_id: item.product.id,
             requested_quantity: item.requested_quantity,
             selling_price: item.selling_price,
+            associate_mrp: item.associate_mrp,
+            mrp: item.mrp,
+            discount: item.discount,
+            notes: item.notes.trim() || undefined,
           })),
         });
 
@@ -442,48 +625,34 @@ function CreateOrderContent() {
               type="button"
               disabled={isReadOnly}
               onClick={() => setSelectedFirm('LE')}
-              className={`p-2.5 rounded-lg border text-left transition-all flex items-center justify-between ${
+              className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
                 selectedFirm === 'LE'
-                  ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 ring-1 ring-indigo-500 shadow-xs'
-                  : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100 text-slate-700'
-              } ${isReadOnly ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+                  ? 'bg-indigo-50/80 border-indigo-600 ring-2 ring-indigo-500/20'
+                  : 'bg-slate-50/50 border-slate-200 hover:bg-slate-50'
+              }`}
             >
-              <div className="min-w-0">
-                <div className="text-xs font-bold flex items-center gap-1.5">
-                  <span>LE</span>
-                  {selectedFirm === 'LE' && <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />}
-                </div>
-                <div className="text-[10px] text-slate-500 truncate mt-0.5">Lakshmi Enterprises</div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900">Lakshmi Enterprises</span>
+                <span className="badge badge-info text-[10px]">LE</span>
               </div>
-              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                selectedFirm === 'LE' ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
-              }`}>
-                LE
-              </span>
+              <p className="text-[10px] text-slate-500 mt-1">Main Firm Distribution</p>
             </button>
 
             <button
               type="button"
               disabled={isReadOnly}
               onClick={() => setSelectedFirm('SLSA')}
-              className={`p-2.5 rounded-lg border text-left transition-all flex items-center justify-between ${
+              className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
                 selectedFirm === 'SLSA'
-                  ? 'border-purple-600 bg-purple-50/70 text-purple-950 ring-1 ring-purple-500 shadow-xs'
-                  : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100 text-slate-700'
-              } ${isReadOnly ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+                  ? 'bg-purple-50/80 border-purple-600 ring-2 ring-purple-500/20'
+                  : 'bg-slate-50/50 border-slate-200 hover:bg-slate-50'
+              }`}
             >
-              <div className="min-w-0">
-                <div className="text-xs font-bold flex items-center gap-1.5">
-                  <span>SLSA</span>
-                  {selectedFirm === 'SLSA' && <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />}
-                </div>
-                <div className="text-[10px] text-slate-500 truncate mt-0.5">SLSA Firm</div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900">SLSA</span>
+                <span className="badge badge-neutral text-[10px]">SLSA</span>
               </div>
-              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                selectedFirm === 'SLSA' ? 'bg-purple-600 text-white' : 'bg-slate-200 text-slate-600'
-              }`}>
-                SLSA
-              </span>
+              <p className="text-[10px] text-slate-500 mt-1">Secondary Firm Distribution</p>
             </button>
           </div>
         </section>
@@ -491,22 +660,17 @@ function CreateOrderContent() {
         {/* 1. Select Dealer Card */}
         <section className="bg-white rounded-lg border border-slate-200 p-3 shadow-xs space-y-2.5">
           <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-            <div className="flex items-center gap-2">
-              <Store className="w-4 h-4 text-indigo-600" />
-              <div>
-                <h2 className="text-xs font-bold text-slate-900">Select Dealer</h2>
-                <p className="text-[10px] text-slate-500">Search dealer by name, code, shop or mobile</p>
-              </div>
+            <div>
+              <h2 className="text-xs font-bold text-slate-900">Select Dealer</h2>
+              <p className="text-[10px] text-slate-500">Choose dealer to assign this order to</p>
             </div>
             {selectedDealer && !isReadOnly && (
               <button
-                onClick={() => {
-                  setSelectedDealer(null);
-                  setDealerSearch('');
-                }}
-                className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
+                type="button"
+                onClick={() => setSelectedDealer(null)}
+                className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold"
               >
-                Change
+                Change Dealer
               </button>
             )}
           </div>
@@ -518,26 +682,30 @@ function CreateOrderContent() {
                 <input
                   type="text"
                   disabled={isReadOnly}
-                  placeholder="Search dealer (name, code, mobile)..."
+                  placeholder={isReadOnly ? 'Order is locked' : 'Search dealers by name, ID or mobile...'}
                   value={dealerSearch}
                   onChange={(e) => {
                     setDealerSearch(e.target.value);
                     setDealerDropdownOpen(true);
                   }}
                   onFocus={() => !isReadOnly && setDealerDropdownOpen(true)}
-                  className="input-field has-left-icon pr-8 text-xs py-1.5 disabled:bg-slate-100"
+                  className="input-field has-left-icon text-xs py-1.5 disabled:bg-slate-100"
                 />
-                <button
-                  type="button"
-                  disabled={isReadOnly}
-                  onClick={() => setDealerDropdownOpen(!dealerDropdownOpen)}
-                  className="input-icon-btn"
-                >
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${dealerDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
+                {dealerSearch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDealerSearch('');
+                      setDealerDropdownOpen(false);
+                    }}
+                    className="input-icon-btn"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
-              {/* Dealer Dropdown List: Only show Name, ID, Mobile */}
+              {/* Dealer Dropdown */}
               {dealerDropdownOpen && !isReadOnly && (
                 <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-30 max-h-56 overflow-y-auto divide-y divide-slate-100">
                   {loadingDealers ? (
@@ -598,7 +766,7 @@ function CreateOrderContent() {
         <section className="bg-white rounded-lg border border-slate-200 p-3 shadow-xs space-y-2.5">
           <div className="border-b border-slate-100 pb-1.5">
             <h2 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <Package className="w-4 h-4 text-indigo-600" /> Search & Add Products
+              <ShoppingBag className="w-4 h-4 text-indigo-600" /> Search &amp; Add Products
             </h2>
             <p className="text-[10px] text-slate-500 mt-0.5">
               Search by product id, name or company
@@ -634,7 +802,7 @@ function CreateOrderContent() {
               )}
             </div>
 
-            {/* Product Search Results: Only show Name, ID, Company and (+) button */}
+            {/* Product Search Results */}
             {showProductResults && !isReadOnly && (
               <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 max-h-60 overflow-y-auto divide-y divide-slate-100">
                 {loadingProducts ? (
@@ -686,9 +854,9 @@ function CreateOrderContent() {
           </div>
         </section>
 
-        {/* 3. Order Items Card: Just Name, ID, Company & ask quantity (No line total) */}
-        <section className="bg-white rounded-lg border border-slate-200 p-3 shadow-xs space-y-2.5">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+        {/* 3. Order Items Card */}
+        <section className="bg-white rounded-lg border border-slate-200 p-3 shadow-xs space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <h2 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
               <ShoppingBag className="w-4 h-4 text-indigo-600" /> Order Items ({orderItems.length})
             </h2>
@@ -696,7 +864,7 @@ function CreateOrderContent() {
               <button
                 type="button"
                 onClick={() => setOrderItems([])}
-                className="text-[11px] text-red-600 hover:text-red-800 font-medium"
+                className="text-[11px] text-red-600 hover:text-red-800 font-medium cursor-pointer"
               >
                 Clear All
               </button>
@@ -705,127 +873,277 @@ function CreateOrderContent() {
 
           {orderItems.length === 0 ? (
             <div className="p-6 text-center border border-dashed border-slate-200 rounded-lg bg-slate-50/50 space-y-1">
-              <Package className="w-8 h-8 text-slate-300 mx-auto" />
+              <ShoppingBag className="w-8 h-8 text-slate-300 mx-auto" />
               <p className="text-xs font-semibold text-slate-600">No items added</p>
               <p className="text-[10px] text-slate-400">Search and tap (+) to add products</p>
             </div>
           ) : (
-            <div className="space-y-2.5 divide-y divide-slate-100">
-              {orderItems.map((item, idx) => (
-                <div
-                  key={item.product.id}
-                  className="pt-2 first:pt-0 flex items-center justify-between gap-2"
-                >
-                  <div className="flex-1 min-w-0 space-y-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-semibold text-slate-400">#{idx + 1}</span>
-                      <span className="text-xs font-semibold text-slate-900 truncate">{item.product.name}</span>
-                      <span className="badge badge-neutral text-[10px] font-mono shrink-0">{item.product.product_code}</span>
-                    </div>
-                    {item.product.company_name && (
-                      <div className="text-[10px] text-slate-500 truncate">
-                        Company: {item.product.company_name}
+            <div className="space-y-3 divide-y divide-slate-100">
+              {orderItems.map((item, idx) => {
+                const itemLineTotal = (Number(item.selling_price) || 0) * (Number(item.requested_quantity) || 0);
+                const itemKey = item.id || item.product.id;
+                const isItemSaving = savingItemKey === itemKey;
+                const isItemSaved = savedItemKeys[itemKey];
+
+                return (
+                  <div
+                    key={item.product.id}
+                    className="pt-3 first:pt-0 space-y-2.5"
+                  >
+                    {/* Item Top: Name, Code, Company, Remove */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[11px] font-bold text-slate-400">#{idx + 1}</span>
+                          <span className="text-xs font-bold text-slate-900 truncate">{item.product.name}</span>
+                          <span className="badge badge-neutral text-[10px] font-mono shrink-0">{item.product.product_code}</span>
+                        </div>
+                        {item.product.company_name && (
+                          <div className="text-[10px] text-slate-500 truncate">
+                            Company: {item.product.company_name}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
 
-                  {/* Quantity input without line total */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-md border border-slate-200">
-                      <button
-                        type="button"
-                        disabled={isReadOnly}
-                        onClick={() => handleQuantityChange(item.product.id, item.requested_quantity - 1)}
-                        className="w-6 h-6 flex items-center justify-center rounded bg-white text-slate-700 hover:bg-slate-200 transition-colors font-bold text-xs shadow-xs disabled:opacity-50"
-                        title="Decrease"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <input
-                        type="number"
-                        min="1"
-                        disabled={isReadOnly}
-                        value={item.requested_quantity}
-                        onChange={(e) => handleQuantityChange(item.product.id, parseInt(e.target.value, 10))}
-                        className="w-12 h-6 text-center text-xs font-bold bg-white border border-slate-200 rounded focus:outline-none focus:border-indigo-500 disabled:bg-slate-100"
-                      />
-                      <button
-                        type="button"
-                        disabled={isReadOnly}
-                        onClick={() => handleQuantityChange(item.product.id, item.requested_quantity + 1)}
-                        className="w-6 h-6 flex items-center justify-center rounded bg-white text-slate-700 hover:bg-slate-200 transition-colors font-bold text-xs shadow-xs disabled:opacity-50"
-                        title="Increase"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(item.product.id)}
+                          className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                          title="Remove Item"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
 
-                    {!isReadOnly && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveItem(item.product.id)}
-                        className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                        title="Remove Item"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    {/* Pricing, Discount, Quantity, Line Total & Tick Button Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200/70 text-xs items-end">
+                      {/* Product MRP (order_items.mrp) */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">
+                          MRP (₹)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          disabled={isReadOnly}
+                          value={item.mrp}
+                          onChange={(e) => handleMrpChange(item.product.id, parseFloat(e.target.value) || 0)}
+                          className="w-full text-xs font-medium py-1 px-1.5 bg-white border border-slate-200 rounded focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 text-right"
+                        />
+                      </div>
+
+                      {/* Associate MRP */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">
+                          Assoc MRP (₹)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          disabled={isReadOnly}
+                          value={item.associate_mrp}
+                          onChange={(e) => handleAssociateMrpChange(item.product.id, parseFloat(e.target.value) || 0)}
+                          className="w-full text-xs font-semibold py-1 px-1.5 bg-white border border-slate-200 rounded focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 text-right"
+                        />
+                      </div>
+
+                      {/* Discount % */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">
+                          Discount (%)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          disabled={isReadOnly}
+                          value={item.discount}
+                          onChange={(e) => handleDiscountChange(item.product.id, parseFloat(e.target.value) || 0)}
+                          className="w-full text-xs font-medium py-1 px-1 bg-white border border-slate-200 rounded focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 text-center"
+                        />
+                      </div>
+
+                      {/* Selling Price */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">
+                          Selling Price (₹)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          disabled={isReadOnly}
+                          value={item.selling_price}
+                          onChange={(e) => handleSellingPriceChange(item.product.id, parseFloat(e.target.value) || 0)}
+                          className="w-full text-xs font-semibold py-1 px-1.5 bg-white border border-slate-200 rounded focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 text-right"
+                        />
+                      </div>
+
+                      {/* Quantity */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">
+                          Quantity
+                        </label>
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            disabled={isReadOnly}
+                            onClick={() => handleQuantityChange(item.product.id, item.requested_quantity - 1)}
+                            className="w-5 h-6 flex items-center justify-center rounded bg-white text-slate-700 hover:bg-slate-200 border border-slate-200 transition-colors font-bold text-xs shadow-2xs disabled:opacity-50 cursor-pointer shrink-0"
+                          >
+                            <Minus className="w-2.5 h-2.5" />
+                          </button>
+                          <input
+                            type="number"
+                            min="1"
+                            disabled={isReadOnly}
+                            value={item.requested_quantity}
+                            onChange={(e) => handleQuantityChange(item.product.id, parseInt(e.target.value, 10) || 1)}
+                            className="w-full min-w-0 h-6 text-center text-xs font-bold bg-white border border-slate-200 rounded focus:outline-none focus:border-indigo-500 disabled:bg-slate-100 px-0.5"
+                          />
+                          <button
+                            type="button"
+                            disabled={isReadOnly}
+                            onClick={() => handleQuantityChange(item.product.id, item.requested_quantity + 1)}
+                            className="w-5 h-6 flex items-center justify-center rounded bg-white text-slate-700 hover:bg-slate-200 border border-slate-200 transition-colors font-bold text-xs shadow-2xs disabled:opacity-50 cursor-pointer shrink-0"
+                          >
+                            <Plus className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Line Total */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">
+                          Line Total (₹)
+                        </label>
+                        <div className="py-1 px-1.5 bg-indigo-50/70 border border-indigo-100 rounded text-xs font-bold font-mono text-indigo-900 text-right whitespace-nowrap">
+                          ₹{itemLineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+
+                      {/* Small Tick Button to Save Item Row */}
+                      <div className="flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveSingleItem(item)}
+                          disabled={isReadOnly || isItemSaving}
+                          title={item.id ? 'Save changes for this item to database' : 'Confirm item changes'}
+                          className={`w-full h-6 rounded flex items-center justify-center transition-all cursor-pointer ${
+                            isItemSaved
+                              ? 'bg-emerald-600 text-white shadow-2xs'
+                              : item.isDirty
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-400 hover:bg-emerald-600 hover:text-white ring-2 ring-emerald-400/40'
+                              : 'bg-slate-200 text-slate-600 hover:bg-emerald-600 hover:text-white'
+                          }`}
+                        >
+                          {isItemSaving ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Item Notes */}
+                    <div className="pt-0.5">
+                      <input
+                        type="text"
+                        disabled={isReadOnly}
+                        placeholder="Item notes / specifications (optional)..."
+                        value={item.notes}
+                        onChange={(e) => handleItemNotesChange(item.product.id, e.target.value)}
+                        className="w-full text-xs py-1 px-2.5 bg-slate-50/50 border border-slate-200 rounded-md focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 placeholder:text-slate-400"
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
+            </div>
+          )}
+
+          {/* Total (Sum of line totals) */}
+          {orderItems.length > 0 && (
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between bg-indigo-50/80 p-3 rounded-lg border border-indigo-100">
+              <span className="text-xs font-bold text-indigo-950">Total Amount:</span>
+              <span className="text-base font-extrabold font-mono text-indigo-700">
+                ₹{totalOrderAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </span>
             </div>
           )}
         </section>
 
-        {/* Notes & Actions */}
-        <section className="bg-white rounded-lg border border-slate-200 p-3 shadow-xs space-y-3">
-          <div>
-            <label className="form-label text-xs font-semibold">Order Notes / Remarks (Optional)</label>
-            <textarea
-              rows={2}
-              disabled={isReadOnly}
-              placeholder="Add any instructions..."
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="textarea-field text-xs py-1.5 disabled:bg-slate-100"
-            />
-          </div>
+        {/* 4. Order Notes Card */}
+        <section className="bg-white rounded-lg border border-slate-200 p-3 shadow-xs space-y-1.5">
+          <label className="text-xs font-bold text-slate-900 block">
+            General Order Notes (Optional)
+          </label>
+          <textarea
+            rows={2}
+            disabled={isReadOnly}
+            placeholder={isReadOnly ? 'Order is locked' : 'Add delivery instructions or overall order notes...'}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="w-full text-xs p-2 bg-slate-50/50 border border-slate-200 rounded-md focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100"
+          />
+        </section>
 
-          {!isReadOnly && (
-            <div className="flex items-center justify-end gap-2 pt-1">
+        {/* 5. Sticky Action Footer */}
+        {!isReadOnly && (
+          <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-slate-900">
+                {isEditing ? 'Ready to update order?' : 'Ready to place order?'}
+              </p>
+              <p className="text-[10px] text-slate-500">
+                Save as draft to edit later, or submit directly for admin approval.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               <button
                 type="button"
                 disabled={isSubmitting}
                 onClick={() => handleSaveOrder('Draft')}
-                className="btn-base btn-secondary flex-1 sm:flex-none text-xs py-2 px-4"
+                className="btn-base btn-secondary flex-1 sm:flex-initial text-xs py-2 px-3 flex items-center justify-center gap-1.5"
               >
                 {isSubmitting ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <Save className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Save Draft</span>
                 )}
-                {isEditing ? 'Update Draft' : 'Save Draft'}
               </button>
 
               <button
                 type="button"
                 disabled={isSubmitting}
                 onClick={() => handleSaveOrder('Submitted')}
-                className="btn-base btn-primary flex-1 sm:flex-none text-xs py-2 px-4"
+                className="btn-base btn-primary flex-1 sm:flex-initial text-xs py-2 px-4 flex items-center justify-center gap-1.5"
               >
                 {isSubmitting ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
                 ) : (
-                  <Send className="w-3.5 h-3.5" />
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{isEditing ? 'Update & Submit' : 'Submit Order'}</span>
+                  </>
                 )}
-                {isEditing ? 'Update & Submit' : 'Submit Order'}
               </button>
             </div>
-          )}
-        </section>
+          </div>
+        )}
       </main>
 
-      {/* Bottom Navigation */}
+      {/* Associate Mobile Bottom Navigation */}
       <AssociateBottomNavigation />
     </div>
   );
@@ -837,7 +1155,7 @@ export default function CreateOrderPage() {
       fallback={
         <div className="p-12 text-center flex flex-col items-center justify-center space-y-2">
           <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-          <p className="text-xs text-slate-500 font-medium">Loading create order...</p>
+          <p className="text-xs text-slate-500 font-medium">Loading create order page...</p>
         </div>
       }
     >

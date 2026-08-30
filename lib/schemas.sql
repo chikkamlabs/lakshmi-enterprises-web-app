@@ -91,6 +91,20 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
+-- Order Payment Calculation Type
+DO $$ BEGIN
+    CREATE TYPE public.calculation_type AS ENUM ('credit', 'deduct');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+-- Order Payment Method / Type
+DO $$ BEGIN
+    CREATE TYPE public.payment_type AS ENUM ('cash', 'upi', 'cheque', 'others');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
 
 -- ============================================================================
 -- SECTION 2: REUSABLE TRIGGER FUNCTIONS & RLS HELPERS
@@ -175,11 +189,23 @@ CREATE TABLE IF NOT EXISTS public.categories (
 );
 
 -- ----------------------------------------------------------------------------
--- 4. DEALERS TABLE
+-- 4. GROUPS TABLE
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.groups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id TEXT UNIQUE NOT NULL,
+    group_name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ----------------------------------------------------------------------------
+-- 5. DEALERS TABLE
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.dealers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     dealer_code TEXT UNIQUE NOT NULL,
+    group_id UUID REFERENCES public.groups(id) ON DELETE SET NULL,
     name TEXT NOT NULL,
     mobile TEXT,
     shop_name TEXT,
@@ -193,8 +219,11 @@ CREATE TABLE IF NOT EXISTS public.dealers (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE IF EXISTS public.dealers 
+    ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES public.groups(id) ON DELETE SET NULL;
+
 -- ----------------------------------------------------------------------------
--- 5. DEALER_TRANSACTIONS TABLE
+-- 6. DEALER_TRANSACTIONS TABLE
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.dealer_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -211,7 +240,7 @@ CREATE TABLE IF NOT EXISTS public.dealer_transactions (
 );
 
 -- ----------------------------------------------------------------------------
--- 6. PRODUCTS TABLE
+-- 7. PRODUCTS TABLE
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -223,6 +252,7 @@ CREATE TABLE IF NOT EXISTS public.products (
     purchase_price NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     selling_price NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     mrp NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    ad_disc NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     current_stock INTEGER NOT NULL DEFAULT 0,
     low_stock INTEGER NOT NULL DEFAULT 10,
     unit TEXT NOT NULL DEFAULT 'pcs',
@@ -231,8 +261,12 @@ CREATE TABLE IF NOT EXISTS public.products (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE IF EXISTS public.products 
+    ADD COLUMN IF NOT EXISTS mrp NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS ad_disc NUMERIC(12, 2) NOT NULL DEFAULT 0.00;
+
 -- ----------------------------------------------------------------------------
--- 7. ORDERS TABLE
+-- 8. ORDERS TABLE
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -246,9 +280,15 @@ CREATE TABLE IF NOT EXISTS public.orders (
     packing_status public.packing_status DEFAULT 'Pending',
     notes TEXT,
     total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    balance_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    delivered_date DATE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE IF EXISTS public.orders 
+    ADD COLUMN IF NOT EXISTS balance_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS delivered_date DATE;
 
 -- ----------------------------------------------------------------------------
 -- 8. ORDER_ITEMS TABLE
@@ -262,10 +302,24 @@ CREATE TABLE IF NOT EXISTS public.order_items (
     released_quantity INTEGER NOT NULL DEFAULT 0,
     pending_quantity INTEGER NOT NULL DEFAULT 0,
     selling_price NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    mrp NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    associate_mrp NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    discount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    ad_discount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    gst NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    notes TEXT,
     line_total NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE IF EXISTS public.order_items 
+    ADD COLUMN IF NOT EXISTS mrp NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS associate_mrp NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS discount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS ad_discount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS gst NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS notes TEXT;
 
 -- ----------------------------------------------------------------------------
 -- 9. BACKORDER_ITEMS TABLE
@@ -311,6 +365,30 @@ CREATE TABLE IF NOT EXISTS public.settings (
     description TEXT
 );
 
+-- ----------------------------------------------------------------------------
+-- 12. ORDER_PAYMENTS TABLE
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.order_payments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bill_id UUID REFERENCES public.orders(id) ON DELETE SET NULL,
+    dealer_id UUID NOT NULL REFERENCES public.dealers(id) ON DELETE CASCADE,
+    amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    calculation_type public.calculation_type NOT NULL DEFAULT 'deduct',
+    remaining_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    payment_type public.payment_type NOT NULL DEFAULT 'cash',
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- FK to orders for bill_id
+DO $$ BEGIN
+    ALTER TABLE public.order_payments 
+        ADD CONSTRAINT order_payments_bill_id_fkey FOREIGN KEY (bill_id) REFERENCES public.orders(id) ON DELETE SET NULL;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
 
 -- ============================================================================
 -- SECTION 4: ATTACH UPDATED_AT TRIGGERS
@@ -326,6 +404,10 @@ CREATE TRIGGER tr_companies_updated_at BEFORE UPDATE ON public.companies
 
 DROP TRIGGER IF EXISTS tr_categories_updated_at ON public.categories;
 CREATE TRIGGER tr_categories_updated_at BEFORE UPDATE ON public.categories
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_groups_updated_at ON public.groups;
+CREATE TRIGGER tr_groups_updated_at BEFORE UPDATE ON public.groups
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 DROP TRIGGER IF EXISTS tr_dealers_updated_at ON public.dealers;
@@ -346,6 +428,10 @@ CREATE TRIGGER tr_orders_updated_at BEFORE UPDATE ON public.orders
 
 DROP TRIGGER IF EXISTS tr_order_items_updated_at ON public.order_items;
 CREATE TRIGGER tr_order_items_updated_at BEFORE UPDATE ON public.order_items
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_order_payments_updated_at ON public.order_payments;
+CREATE TRIGGER tr_order_payments_updated_at BEFORE UPDATE ON public.order_payments
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 DROP TRIGGER IF EXISTS tr_backorder_items_updated_at ON public.backorder_items;
@@ -400,7 +486,11 @@ CREATE INDEX IF NOT EXISTS idx_categories_code ON public.categories(category_cod
 CREATE INDEX IF NOT EXISTS idx_categories_name ON public.categories(name);
 
 CREATE INDEX IF NOT EXISTS idx_dealers_code ON public.dealers(dealer_code);
+CREATE INDEX IF NOT EXISTS idx_dealers_group_id ON public.dealers(group_id);
 CREATE INDEX IF NOT EXISTS idx_dealers_name ON public.dealers(name);
+
+CREATE INDEX IF NOT EXISTS idx_groups_group_id ON public.groups(group_id);
+CREATE INDEX IF NOT EXISTS idx_groups_group_name ON public.groups(group_name);
 
 CREATE INDEX IF NOT EXISTS idx_dealer_transactions_dealer_id ON public.dealer_transactions(dealer_id);
 CREATE INDEX IF NOT EXISTS idx_dealer_transactions_firm ON public.dealer_transactions(firm);
@@ -418,9 +508,16 @@ CREATE INDEX IF NOT EXISTS idx_orders_firm ON public.orders(firm);
 CREATE INDEX IF NOT EXISTS idx_orders_dealer_id ON public.orders(dealer_id);
 CREATE INDEX IF NOT EXISTS idx_orders_associate_id ON public.orders(associate_id);
 CREATE INDEX IF NOT EXISTS idx_orders_packed_by ON public.orders(packed_by);
+CREATE INDEX IF NOT EXISTS idx_orders_balance_amount ON public.orders(balance_amount);
+CREATE INDEX IF NOT EXISTS idx_orders_delivered_date ON public.orders(delivered_date);
 
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON public.order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON public.order_items(product_id);
+
+CREATE INDEX IF NOT EXISTS idx_order_payments_bill_id ON public.order_payments(bill_id);
+CREATE INDEX IF NOT EXISTS idx_order_payments_dealer_id ON public.order_payments(dealer_id);
+CREATE INDEX IF NOT EXISTS idx_order_payments_calculation_type ON public.order_payments(calculation_type);
+CREATE INDEX IF NOT EXISTS idx_order_payments_payment_type ON public.order_payments(payment_type);
 
 CREATE INDEX IF NOT EXISTS idx_backorder_items_product_id ON public.backorder_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_backorder_dealers_dealer_id ON public.backorder_dealers(dealer_id);
@@ -434,15 +531,17 @@ CREATE INDEX IF NOT EXISTS idx_settings_key ON public.settings(key);
 -- SECTION 7: ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
 
--- Enable RLS on all 11 tables
+-- Enable RLS on all tables
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.dealers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.dealer_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.order_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.backorder_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.backorder_dealers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
@@ -777,6 +876,49 @@ DROP POLICY IF EXISTS "settings_associate_select" ON public.settings;
 CREATE POLICY "settings_associate_select" ON public.settings
     FOR SELECT TO authenticated
     USING (public.is_associate());
+
+-- ----------------------------------------------------------------------------
+-- 7.12 GROUPS POLICIES
+-- Admin: Full CRUD
+-- Associate & Staff: Read only
+-- ----------------------------------------------------------------------------
+DROP POLICY IF EXISTS "groups_admin_all" ON public.groups;
+CREATE POLICY "groups_admin_all" ON public.groups
+    FOR ALL TO authenticated
+    USING (public.is_admin())
+    WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "groups_read_authenticated" ON public.groups;
+CREATE POLICY "groups_read_authenticated" ON public.groups
+    FOR SELECT TO authenticated
+    USING (public.is_associate() OR public.is_staff());
+
+-- ----------------------------------------------------------------------------
+-- 7.13 ORDER_PAYMENTS POLICIES
+-- Admin: Full CRUD
+-- Associate: View all, Insert payments
+-- Staff: View only
+-- ----------------------------------------------------------------------------
+DROP POLICY IF EXISTS "order_payments_admin_all" ON public.order_payments;
+CREATE POLICY "order_payments_admin_all" ON public.order_payments
+    FOR ALL TO authenticated
+    USING (public.is_admin())
+    WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "order_payments_associate_select" ON public.order_payments;
+CREATE POLICY "order_payments_associate_select" ON public.order_payments
+    FOR SELECT TO authenticated
+    USING (public.is_associate());
+
+DROP POLICY IF EXISTS "order_payments_associate_insert" ON public.order_payments;
+CREATE POLICY "order_payments_associate_insert" ON public.order_payments
+    FOR INSERT TO authenticated
+    WITH CHECK (public.is_associate());
+
+DROP POLICY IF EXISTS "order_payments_staff_select" ON public.order_payments;
+CREATE POLICY "order_payments_staff_select" ON public.order_payments
+    FOR SELECT TO authenticated
+    USING (public.is_staff());
 
 
 -- ============================================================================

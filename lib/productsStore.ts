@@ -10,6 +10,7 @@ export interface Product {
   purchase_price: number;
   selling_price: number;
   mrp: number;
+  ad_disc?: number | null;
   current_stock: number;
   low_stock: number;
   unit: string;
@@ -76,6 +77,7 @@ export async function addProduct(
           purchase_price: Number(newProduct.purchase_price || 0),
           selling_price: Number(newProduct.selling_price || 0),
           mrp: Number(newProduct.mrp || 0),
+          ad_disc: newProduct.ad_disc !== undefined && newProduct.ad_disc !== null ? Number(newProduct.ad_disc) : 0,
           current_stock: Number(newProduct.current_stock || 0),
           low_stock: Number(newProduct.low_stock ?? 10),
           unit: newProduct.unit || 'pcs',
@@ -122,6 +124,9 @@ export async function updateProduct(
     }
     if (updatedFields.mrp !== undefined) {
       payload.mrp = Number(updatedFields.mrp);
+    }
+    if (updatedFields.ad_disc !== undefined) {
+      payload.ad_disc = updatedFields.ad_disc === null ? null : Number(updatedFields.ad_disc);
     }
     if (updatedFields.current_stock !== undefined) {
       payload.current_stock = Number(updatedFields.current_stock);
