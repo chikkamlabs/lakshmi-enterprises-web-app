@@ -358,7 +358,7 @@ function OpenOrderContent() {
     setCreditUpdateSuccess('');
 
     try {
-      const billAmount = Number(order.amount ?? order.total_amount ?? grandTotal);
+      const billAmount = Number(grandTotal > 0 ? grandTotal : (order.total_amount || order.amount || 0));
 
       // Perform all Supabase operations in lib/order_payments.ts
       const res = await updateBillCredit({

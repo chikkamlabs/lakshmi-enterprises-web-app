@@ -271,7 +271,6 @@ export async function updateBillCredit(params: {
       .from('orders')
       .update({
         balance_amount: numAmount,
-        amount: numAmount,
         total_amount: numAmount,
         updated_at: new Date().toISOString(),
       })
@@ -310,16 +309,19 @@ export async function updateBillCredit(params: {
           localStorage.setItem(LOCAL_STORAGE_ORDER_PAYMENTS_KEY, JSON.stringify(storedPayments));
         }
 
-        // Update orders
-        const storedOrdersStr = localStorage.getItem('lakshmi_orders');
-        if (storedOrdersStr) {
-          const storedOrders: Order[] = JSON.parse(storedOrdersStr);
-          const oIdx = storedOrders.findIndex((o) => o.id === orderId);
-          if (oIdx !== -1) {
-            storedOrders[oIdx].balance_amount = numAmount;
-            storedOrders[oIdx].amount = numAmount;
-            storedOrders[oIdx].total_amount = numAmount;
-            localStorage.setItem('lakshmi_orders', JSON.stringify(storedOrders));
+        // Update orders in both local storage keys
+        const orderStorageKeys = ['lakshmi_orders_data_v1', 'lakshmi_orders'];
+        for (const storageKey of orderStorageKeys) {
+          const storedOrdersStr = localStorage.getItem(storageKey);
+          if (storedOrdersStr) {
+            const storedOrders: Order[] = JSON.parse(storedOrdersStr);
+            const oIdx = storedOrders.findIndex((o) => o.id === orderId);
+            if (oIdx !== -1) {
+              storedOrders[oIdx].balance_amount = numAmount;
+              storedOrders[oIdx].total_amount = numAmount;
+              storedOrders[oIdx].amount = numAmount;
+              localStorage.setItem(storageKey, JSON.stringify(storedOrders));
+            }
           }
         }
       } catch (storageErr) {
