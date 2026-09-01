@@ -84,7 +84,7 @@ export async function addOrderPayment(params: {
 
     const { data: orderData, error: orderFetchErr } = await supabase
       .from('orders')
-      .select('id, balance_amount, total_amount, amount, firm')
+      .select('id, balance_amount, total_amount, firm')
       .eq('id', bill_id)
       .maybeSingle();
 
@@ -154,20 +154,33 @@ export async function addOrderPayment(params: {
       })
       .eq('id', bill_id);
 
-    // 5. Update dealer credit:
-    // If firm type = LE update dealers.le_credit = dealers.le_credit + amount
-    // If firm type = slsa update dealers.slsa_credit = dealers.slsa_credit + amount
+    // 5. Update dealer credit based on calculation type
+    // credit = add amount
+    // deduct = subtract amount
     const isSlsa = orderFirm.toUpperCase() === 'SLSA';
     const currentDealer = await getDealerById(dealer_id);
 
     const dealerUpdate: Partial<Dealer> = {};
+
     if (isSlsa) {
       const currentSlsa = Number(currentDealer?.slsa_credit ?? 0);
-      dealerUpdate.slsa_credit = currentSlsa + numAmount;
+
+      dealerUpdate.slsa_credit =
+        calculation_type === 'credit'
+          ? currentSlsa + numAmount
+          : currentSlsa - numAmount;
     } else {
-      const currentLe = Number(currentDealer?.le_credit ?? currentDealer?.current_credit ?? 0);
-      dealerUpdate.le_credit = currentLe + numAmount;
-      dealerUpdate.current_credit = currentLe + numAmount;
+      const currentLe = Number(
+        currentDealer?.le_credit ?? currentDealer?.current_credit ?? 0
+      );
+
+      const newLeCredit =
+        calculation_type === 'credit'
+          ? currentLe + numAmount
+          : currentLe - numAmount;
+
+      dealerUpdate.le_credit = newLeCredit;
+      dealerUpdate.current_credit = newLeCredit;
     }
 
     await updateDealer(dealer_id, dealerUpdate);
@@ -184,13 +197,16 @@ export async function addOrderPayment(params: {
         }
 
         // Update orders
-        const storedOrdersStr = localStorage.getItem('lakshmi_orders');
-        if (storedOrdersStr) {
-          const storedOrders: Order[] = JSON.parse(storedOrdersStr);
-          const oIdx = storedOrders.findIndex((o) => o.id === bill_id);
-          if (oIdx !== -1) {
-            storedOrders[oIdx].balance_amount = newBalance;
-            localStorage.setItem('lakshmi_orders', JSON.stringify(storedOrders));
+        const orderStorageKeys = ['lakshmi_orders_data_v1', 'lakshmi_orders'];
+        for (const storageKey of orderStorageKeys) {
+          const storedOrdersStr = localStorage.getItem(storageKey);
+          if (storedOrdersStr) {
+            const storedOrders: Order[] = JSON.parse(storedOrdersStr);
+            const oIdx = storedOrders.findIndex((o) => o.id === bill_id);
+            if (oIdx !== -1) {
+              storedOrders[oIdx].balance_amount = newBalance;
+              localStorage.setItem(storageKey, JSON.stringify(storedOrders));
+            }
           }
         }
       } catch (storageErr) {
