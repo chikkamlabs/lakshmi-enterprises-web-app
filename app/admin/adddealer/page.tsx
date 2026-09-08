@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import AdminHeader from '../header/page';
 import AdminSidebar from '../sidebar/page';
 import { addDealer, getStoredDealers } from '@/lib/dealersStore';
-import { Store, ArrowLeft, Loader2, Save, X, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { getStoredGroups, Group } from '@/lib/groupsStore';
+import { Store, ArrowLeft, Loader2, Save, X, AlertCircle, CheckCircle2, Layers } from 'lucide-react';
 
 export default function AddDealerPage() {
   const router = useRouter();
@@ -16,6 +17,8 @@ export default function AddDealerPage() {
   // Form states
   const [dealerCode, setDealerCode] = useState('DLR-101');
   const [name, setName] = useState('');
+  const [groupId, setGroupId] = useState('');
+  const [groups, setGroups] = useState<Group[]>([]);
   const [mobile, setMobile] = useState('');
   const [shopName, setShopName] = useState('');
   const [address, setAddress] = useState('');
@@ -25,12 +28,15 @@ export default function AddDealerPage() {
   const [slsaCreditLimit, setSlsaCreditLimit] = useState('0');
   const [status, setStatus] = useState(true);
 
-  // Auto-generate code
+  // Auto-generate code & load groups
   useEffect(() => {
     let isMounted = true;
-    getStoredDealers().then((dealers) => {
-      if (isMounted && dealers.length > 0) {
-        setDealerCode(`DLR-${101 + dealers.length}`);
+    Promise.all([getStoredDealers(), getStoredGroups()]).then(([dealers, groupsList]) => {
+      if (isMounted) {
+        if (dealers.length > 0) {
+          setDealerCode(`DLR-${101 + dealers.length}`);
+        }
+        setGroups(groupsList);
       }
     });
     return () => {
@@ -56,6 +62,7 @@ export default function AddDealerPage() {
     try {
       const created = await addDealer({
         dealer_code: dealerCode.trim(),
+        group_id: groupId || null,
         name: name.trim(),
         mobile: mobile.trim() || null,
         shop_name: shopName.trim() || null,
@@ -174,6 +181,25 @@ export default function AddDealerPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
+                  <label htmlFor="dealerGroup" className="form-label font-semibold text-slate-700 block mb-1">
+                    Group Classification
+                  </label>
+                  <select
+                    id="dealerGroup"
+                    value={groupId}
+                    onChange={(e) => setGroupId(e.target.value)}
+                    className="form-input w-full rounded-lg border-slate-300 bg-white"
+                  >
+                    <option value="">-- Select Group (Optional) --</option>
+                    {groups.map((grp) => (
+                      <option key={grp.id} value={grp.id}>
+                        {grp.group_name} ({grp.group_id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
                   <label htmlFor="shopName" className="form-label font-semibold text-slate-700 block mb-1">
                     Shop / Firm Name
                   </label>
@@ -186,7 +212,9 @@ export default function AddDealerPage() {
                     placeholder="Enter shop or business name"
                   />
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="mobile" className="form-label font-semibold text-slate-700 block mb-1">
                     Mobile Number
