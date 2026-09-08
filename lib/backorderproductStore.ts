@@ -217,6 +217,9 @@ export async function getBackorderItemById(id: string): Promise<BackorderItem | 
 /**
  * Create a new backorder product record
  */
+/**
+ * Create a new backorder product record or increment quantity if product is already present
+ */
 export async function createBackorderItem(data: {
   product_id: string;
   required_quantity: number;
@@ -226,18 +229,89 @@ export async function createBackorderItem(data: {
 }): Promise<BackorderItem | null> {
   const reqQty = Number(data.required_quantity) || 0;
   const ordQty = Number(data.ordered_quantity) || 0;
-  const pendingQty = Math.max(0, reqQty - ordQty);
-
-  const payload = {
-    product_id: data.product_id,
-    required_quantity: reqQty,
-    ordered_quantity: ordQty,
-    pending_quantity: pendingQty,
-    status: data.status || 'Pending',
-    notes: data.notes || null,
-  };
 
   try {
+    // Check if backorder already exists for this product_id
+    const { data: existingList, error: checkErr } = await supabase
+      .from('backorder_items')
+      .select(`
+        *,
+        product:products(
+          id,
+          name,
+          product_code,
+          company_id,
+          company:companies(id, name, company_code)
+        )
+      `)
+      .eq('product_id', data.product_id);
+
+    if (!checkErr && existingList && existingList.length > 0) {
+      const existing = existingList[0];
+      const newReqQty = Number(existing.required_quantity || 0) + reqQty;
+      const newOrdQty = Number(existing.ordered_quantity || 0) + ordQty;
+      const newPendingQty = Math.max(0, newReqQty - newOrdQty);
+      const updatedNotes = data.notes
+        ? existing.notes
+          ? `${existing.notes}; ${data.notes}`
+          : data.notes
+        : existing.notes;
+
+      const { data: updated, error: updateErr } = await supabase
+        .from('backorder_items')
+        .update({
+          required_quantity: newReqQty,
+          ordered_quantity: newOrdQty,
+          pending_quantity: newPendingQty,
+          status: data.status || existing.status || 'Pending',
+          notes: updatedNotes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+        .select(`
+          *,
+          product:products(
+            id,
+            name,
+            product_code,
+            company_id,
+            company:companies(id, name, company_code)
+          )
+        `)
+        .single();
+
+      if (!updateErr && updated) {
+        // Also sync local storage
+        if (typeof window !== 'undefined') {
+          try {
+            const raw = localStorage.getItem(LOCAL_STORAGE_BACKORDER_KEY);
+            if (raw) {
+              const list: BackorderItem[] = JSON.parse(raw);
+              const idx = list.findIndex((it) => it.id === existing.id || it.product_id === data.product_id);
+              if (idx !== -1) {
+                list[idx] = { ...list[idx], ...updated };
+                localStorage.setItem(LOCAL_STORAGE_BACKORDER_KEY, JSON.stringify(list));
+              }
+            }
+          } catch (e) {
+            console.error('LocalStorage sync error:', e);
+          }
+        }
+        return updated as unknown as BackorderItem;
+      }
+    }
+
+    // If not existing, insert new record
+    const pendingQty = Math.max(0, reqQty - ordQty);
+    const payload = {
+      product_id: data.product_id,
+      required_quantity: reqQty,
+      ordered_quantity: ordQty,
+      pending_quantity: pendingQty,
+      status: data.status || 'Pending',
+      notes: data.notes || null,
+    };
+
     const { data: inserted, error } = await supabase
       .from('backorder_items')
       .insert([payload])
@@ -254,27 +328,62 @@ export async function createBackorderItem(data: {
       .single();
 
     if (!error && inserted) {
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem(LOCAL_STORAGE_BACKORDER_KEY);
+          const list: BackorderItem[] = raw ? JSON.parse(raw) : [];
+          list.unshift(inserted as unknown as BackorderItem);
+          localStorage.setItem(LOCAL_STORAGE_BACKORDER_KEY, JSON.stringify(list));
+        } catch (e) {
+          console.error('LocalStorage error:', e);
+        }
+      }
       return inserted as unknown as BackorderItem;
     } else if (error) {
       console.warn('Supabase error creating backorder_item:', error.message);
     }
   } catch (err) {
-    console.warn('Error creating backorder_item in Supabase:', err);
+    console.warn('Error creating/updating backorder_item in Supabase:', err);
   }
 
-  // LocalStorage Fallback
+  // LocalStorage Fallback if Supabase is unavailable
   if (typeof window !== 'undefined') {
-    const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `bo-${Date.now()}`;
-    const newItem: BackorderItem = {
-      id: newId,
-      ...payload,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
     try {
       const raw = localStorage.getItem(LOCAL_STORAGE_BACKORDER_KEY);
       const list: BackorderItem[] = raw ? JSON.parse(raw) : [];
+      const existingIdx = list.findIndex((it) => it.product_id === data.product_id);
+
+      if (existingIdx !== -1) {
+        const existing = list[existingIdx];
+        const newReqQty = Number(existing.required_quantity || 0) + reqQty;
+        const newOrdQty = Number(existing.ordered_quantity || 0) + ordQty;
+        const updatedItem: BackorderItem = {
+          ...existing,
+          required_quantity: newReqQty,
+          ordered_quantity: newOrdQty,
+          pending_quantity: Math.max(0, newReqQty - newOrdQty),
+          status: data.status || existing.status || 'Pending',
+          notes: data.notes ? (existing.notes ? `${existing.notes}; ${data.notes}` : data.notes) : existing.notes,
+          updated_at: new Date().toISOString(),
+        };
+        list[existingIdx] = updatedItem;
+        localStorage.setItem(LOCAL_STORAGE_BACKORDER_KEY, JSON.stringify(list));
+        return updatedItem;
+      }
+
+      const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `bo-${Date.now()}`;
+      const newItem: BackorderItem = {
+        id: newId,
+        product_id: data.product_id,
+        required_quantity: reqQty,
+        ordered_quantity: ordQty,
+        pending_quantity: Math.max(0, reqQty - ordQty),
+        status: data.status || 'Pending',
+        notes: data.notes || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
       list.unshift(newItem);
       localStorage.setItem(LOCAL_STORAGE_BACKORDER_KEY, JSON.stringify(list));
       return newItem;

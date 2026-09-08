@@ -230,17 +230,12 @@ function BackorderProductsContent() {
 
                       return (
                         <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-3 px-4 font-mono text-slate-500 text-xs font-semibold">
-                            {item.id.length > 8 ? `${item.id.slice(0, 8)}...` : item.id}
+                          <td className="py-3 px-4 font-mono text-slate-700 text-xs font-semibold">
+                            {prodCode || (item.product_id && item.product_id.length > 8 ? item.product_id.slice(0, 8) : item.product_id)}
                           </td>
 
                           <td className="py-3 px-4">
                             <div className="font-bold text-slate-900">{prodName}</div>
-                            {prodCode && (
-                              <span className="text-[10px] text-slate-400 font-mono block">
-                                Code: {prodCode}
-                              </span>
-                            )}
                           </td>
 
                           <td className="py-3 px-4">
