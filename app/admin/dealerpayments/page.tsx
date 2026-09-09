@@ -6,8 +6,13 @@ import AdminHeader from '../header/page';
 import AdminSidebar from '../sidebar/page';
 import {
   getDealerPayments,
+  getDealerBills,
+  addDealerTransaction,
   DealerPaymentItem,
   DealerPaymentSummary,
+  DealerBillItem,
+  PaymentType,
+  SelectedBillReduction,
 } from '@/lib/dealerpayments';
 import { Dealer } from '@/lib/dealersStore';
 import {
@@ -29,8 +34,12 @@ import {
   Receipt,
   Layers,
   Phone,
-  MapPin,
-  ExternalLink,
+  Plus,
+  CheckCircle2,
+  X,
+  Check,
+  FileText,
+  Trash2,
 } from 'lucide-react';
 
 function DealerPaymentsContent() {
@@ -50,6 +59,21 @@ function DealerPaymentsContent() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedFirm, setSelectedFirm] = useState<string>('ALL');
   const [selectedType, setSelectedType] = useState<string>('ALL');
+
+  // Transaction Modal State
+  const [showTransactionModal, setShowTransactionModal] = useState<boolean>(false);
+  const [txPaymentAmount, setTxPaymentAmount] = useState<string>('');
+  const [txPaymentType, setTxPaymentType] = useState<PaymentType>('cash');
+  const [txFirm, setTxFirm] = useState<string>('LE');
+  const [txNotes, setTxNotes] = useState<string>('');
+  const [dealerBills, setDealerBills] = useState<DealerBillItem[]>([]);
+  const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
+  const [billReductionAmounts, setBillReductionAmounts] = useState<Record<string, string>>({});
+  const [isLoadingBills, setIsLoadingBills] = useState<boolean>(false);
+  const [billFilterNonZeroOnly, setBillFilterNonZeroOnly] = useState<boolean>(true);
+  const [isSubmittingTx, setIsSubmittingTx] = useState<boolean>(false);
+  const [txError, setTxError] = useState<string>('');
+  const [txSuccess, setTxSuccess] = useState<string>('');
 
   const loadData = useCallback(async () => {
     if (!dealerId) {
@@ -90,6 +114,210 @@ function DealerPaymentsContent() {
       isMounted = false;
     };
   }, [loadData]);
+
+  // Open Transaction Modal & Load Dealer Bills
+  const handleOpenTransactionModal = async () => {
+    setTxPaymentAmount('');
+    setTxPaymentType('cash');
+    setTxFirm('LE');
+    setTxNotes('');
+    setSelectedBillIds([]);
+    setBillReductionAmounts({});
+    setTxError('');
+    setBillFilterNonZeroOnly(true);
+    setShowTransactionModal(true);
+    setIsLoadingBills(true);
+
+    try {
+      // Fetch bills for dealer with last created_at first (all bills, client filters non-zero)
+      const bills = await getDealerBills(dealerId, false);
+      setDealerBills(bills);
+    } catch (err) {
+      console.error('Error loading bills for modal:', err);
+    } finally {
+      setIsLoadingBills(false);
+    }
+  };
+
+  // Filtered bills for selection in modal (default to balance_amount != 0)
+  const displayedBills = useMemo(() => {
+    if (billFilterNonZeroOnly) {
+      return dealerBills.filter((b) => Number(b.balance_amount ?? 0) !== 0);
+    }
+    return dealerBills;
+  }, [dealerBills, billFilterNonZeroOnly]);
+
+  // Calculate parsed totals
+  const parsedTxPayment = parseFloat(txPaymentAmount) || 0;
+
+  // Sum of individual bill reductions
+  const totalAllocatedReduction = useMemo(() => {
+    return selectedBillIds.reduce((sum, billId) => {
+      const amt = parseFloat(billReductionAmounts[billId] || '0') || 0;
+      return sum + amt;
+    }, 0);
+  }, [selectedBillIds, billReductionAmounts]);
+
+  const remainingTxAmount = Math.max(0, parsedTxPayment - totalAllocatedReduction);
+
+  // Handle bill selection toggle (Multi-select)
+  const handleToggleSelectBill = (bill: DealerBillItem) => {
+    const isCurrentlySelected = selectedBillIds.includes(bill.id);
+    if (isCurrentlySelected) {
+      setSelectedBillIds((prev) => prev.filter((id) => id !== bill.id));
+      setBillReductionAmounts((prev) => {
+        const next = { ...prev };
+        delete next[bill.id];
+        return next;
+      });
+    } else {
+      setSelectedBillIds((prev) => [...prev, bill.id]);
+      // Default suggested reduction for this bill: min of (remaining unallocated, bill.balance_amount) or bill.balance_amount
+      const currentBal = Math.max(0, Number(bill.balance_amount ?? 0));
+      const availToAllocate = Math.max(0, parsedTxPayment - totalAllocatedReduction);
+      const suggested = availToAllocate > 0 ? Math.min(availToAllocate, currentBal) : currentBal;
+      
+      setBillReductionAmounts((prev) => ({
+        ...prev,
+        [bill.id]: suggested > 0 ? suggested.toString() : (currentBal > 0 ? currentBal.toString() : '0'),
+      }));
+    }
+  };
+
+  // Handle individual bill reduction amount change
+  const handleBillReductionChange = (billId: string, val: string) => {
+    setBillReductionAmounts((prev) => ({
+      ...prev,
+      [billId]: val,
+    }));
+  };
+
+  // Quick action: Set reduction to full bill balance
+  const handleSetFullBillBalance = (bill: DealerBillItem) => {
+    const fullBal = Math.max(0, Number(bill.balance_amount ?? 0));
+    setBillReductionAmounts((prev) => ({
+      ...prev,
+      [bill.id]: fullBal.toString(),
+    }));
+  };
+
+  // Quick action: Allocate remaining transaction amount to this bill
+  const handleAllocateRemainingToBill = (bill: DealerBillItem) => {
+    const currentAllocOther = selectedBillIds
+      .filter((id) => id !== bill.id)
+      .reduce((sum, id) => sum + (parseFloat(billReductionAmounts[id] || '0') || 0), 0);
+    const remaining = Math.max(0, parsedTxPayment - currentAllocOther);
+    const currentBal = Math.max(0, Number(bill.balance_amount ?? 0));
+    const toAllocate = currentBal > 0 ? Math.min(remaining, currentBal) : remaining;
+
+    setBillReductionAmounts((prev) => ({
+      ...prev,
+      [bill.id]: toAllocate.toString(),
+    }));
+  };
+
+  // Submit Transaction "Done" handler
+  const handleDoneTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dealer) return;
+
+    if (parsedTxPayment <= 0) {
+      setTxError('Please enter a valid payment amount greater than zero.');
+      return;
+    }
+
+    if (totalAllocatedReduction > parsedTxPayment) {
+      setTxError(
+        `Total allocated to bills (₹${totalAllocatedReduction.toLocaleString('en-IN', {
+          minimumFractionDigits: 2,
+        })}) cannot exceed the transaction payment amount (₹${parsedTxPayment.toLocaleString('en-IN', {
+          minimumFractionDigits: 2,
+        })}).`
+      );
+      return;
+    }
+
+    // Verify all selected bills have valid amounts
+    const selectedReductions: SelectedBillReduction[] = [];
+    for (const billId of selectedBillIds) {
+      const bill = dealerBills.find((b) => b.id === billId);
+      if (!bill) continue;
+      const redAmt = parseFloat(billReductionAmounts[billId] || '0') || 0;
+      if (redAmt < 0) {
+        setTxError(`Reduction amount for Bill #${bill.order_number} cannot be negative.`);
+        return;
+      }
+      if (redAmt > 0) {
+        selectedReductions.push({
+          billId: bill.id,
+          orderNumber: bill.order_number,
+          firm: bill.firm || 'LE',
+          currentBalance: Number(bill.balance_amount ?? 0),
+          reduceAmount: redAmt,
+        });
+      }
+    }
+
+    setIsSubmittingTx(true);
+    setTxError('');
+
+    try {
+      const res = await addDealerTransaction({
+        dealerId: dealer.id,
+        paymentAmount: parsedTxPayment,
+        paymentType: txPaymentType,
+        selectedBills: selectedReductions,
+        firm: txFirm,
+        notes: txNotes.trim() || null,
+      });
+
+      if (res.success) {
+        // Update local dealer state & credits
+        if (res.updatedDealer) {
+          setDealer(res.updatedDealer);
+          const leCredit = Number(res.updatedDealer.le_credit ?? res.updatedDealer.current_credit ?? 0);
+          const slsaCredit = Number(res.updatedDealer.slsa_credit ?? 0);
+          setSummary((prev) => ({
+            ...prev,
+            totalTransactions: prev.totalTransactions + (res.payments?.length || 1),
+            leCredit,
+            slsaCredit,
+          }));
+        }
+
+        // Add payments to ledger
+        if (res.payments && res.payments.length > 0) {
+          setPayments((prev) => [...res.payments!, ...prev]);
+        } else if (res.payment) {
+          setPayments((prev) => [res.payment!, ...prev]);
+        }
+
+        setShowTransactionModal(false);
+
+        const billCountMsg =
+          selectedReductions.length > 0
+            ? ` across ${selectedReductions.length} selected bill${selectedReductions.length > 1 ? 's' : ''}`
+            : '';
+
+        setTxSuccess(
+          `Transaction of ₹${parsedTxPayment.toLocaleString('en-IN', {
+            minimumFractionDigits: 2,
+          })} processed successfully${billCountMsg}!`
+        );
+        setTimeout(() => setTxSuccess(''), 6000);
+
+        // Reload data to ensure complete consistency
+        loadData();
+      } else {
+        setTxError(res.error || 'Failed to process transaction.');
+      }
+    } catch (err: unknown) {
+      const e = err as Error;
+      setTxError(e?.message || 'An unexpected error occurred.');
+    } finally {
+      setIsSubmittingTx(false);
+    }
+  };
 
   const filteredPayments = useMemo(() => {
     return payments.filter((p) => {
@@ -273,7 +501,7 @@ function DealerPaymentsContent() {
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={loadData}
             disabled={isLoading}
@@ -283,8 +511,34 @@ function DealerPaymentsContent() {
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
+
+          {/* Transaction Button */}
+          <button
+            id="open-transaction-modal-btn"
+            onClick={handleOpenTransactionModal}
+            className="btn-base btn-primary text-xs sm:text-sm flex items-center gap-2 cursor-pointer shadow-sm px-4 py-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="font-bold">Transaction</span>
+          </button>
         </div>
       </div>
+
+      {/* Success Notification Banner */}
+      {txSuccess && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3 text-emerald-900 text-sm animate-fade-in shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <span className="font-semibold">{txSuccess}</span>
+          </div>
+          <button
+            onClick={() => setTxSuccess('')}
+            className="text-emerald-700 hover:text-emerald-950 p-1 rounded-lg"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* 3 Metrics Overview Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -414,7 +668,7 @@ function DealerPaymentsContent() {
             <p className="text-xs text-slate-500 max-w-sm mx-auto">
               {searchQuery || selectedFirm !== 'ALL' || selectedType !== 'ALL'
                 ? 'No transactions match your search/filter criteria.'
-                : 'There are currently no payment records recorded for this dealer.'}
+                : 'There are currently no payment records recorded for this dealer. Tap "Transaction" to add one.'}
             </p>
           </div>
         ) : (
@@ -517,6 +771,378 @@ function DealerPaymentsContent() {
           </>
         )}
       </div>
+
+      {/* Small Overlay Screen / Transaction Modal */}
+      {showTransactionModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-5 sm:p-6 space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                    Add Dealer Transaction
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {dealer.name} ({dealer.dealer_code}) • Debit credit balance
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTransactionModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Current Balances Context Banner */}
+            <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-xs">
+              <div className="flex items-center justify-between pr-2 border-r border-slate-200">
+                <span className="text-slate-600 font-medium">LE Credit Balance:</span>
+                <span className="font-mono font-bold text-indigo-700">
+                  ₹{Number(dealer.le_credit ?? dealer.current_credit ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pl-2">
+                <span className="text-slate-600 font-medium">SLSA Credit Balance:</span>
+                <span className="font-mono font-bold text-purple-700">
+                  ₹{Number(dealer.slsa_credit ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            {txError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                <span>{txError}</span>
+              </div>
+            )}
+
+            {/* Transaction Form */}
+            <form onSubmit={handleDoneTransaction} className="space-y-4">
+              {/* Step 1: Payment Amount */}
+              <div>
+                <label className="form-label text-slate-700 font-bold block mb-1 text-xs">
+                  Payment Amount (₹) <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    placeholder="0.00"
+                    value={txPaymentAmount}
+                    onChange={(e) => setTxPaymentAmount(e.target.value)}
+                    className="form-input w-full pl-9 pr-3 py-2.5 text-sm rounded-xl font-mono font-bold text-slate-900 border-slate-200 focus:border-indigo-500 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Step 2: Payment Type Selector */}
+              <div>
+                <label className="form-label text-slate-700 font-bold block mb-1.5 text-xs">
+                  Payment Method <span className="text-red-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(['cash', 'upi', 'cheque', 'others'] as PaymentType[]).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setTxPaymentType(type)}
+                      className={`py-2 px-2.5 rounded-xl border text-xs font-semibold capitalize flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                        txPaymentType === type
+                          ? 'bg-indigo-50 border-indigo-500 text-indigo-800 font-bold shadow-2xs ring-1 ring-indigo-500/20'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {type === 'cash' && <Banknote className="w-3.5 h-3.5" />}
+                      {type === 'upi' && <Smartphone className="w-3.5 h-3.5" />}
+                      {type === 'cheque' && <FileCheck className="w-3.5 h-3.5" />}
+                      {type === 'others' && <MoreHorizontal className="w-3.5 h-3.5" />}
+                      <span>{type}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Step 3: Select Bills (Multi-Select & Individual Reduction) */}
+              <div className="space-y-3 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <label className="form-label text-slate-800 font-bold text-xs flex items-center gap-1.5 mb-0">
+                      <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Select Bills to Reduce (Multiple Allowed)</span>
+                      <span className="text-[11px] font-normal text-slate-500">
+                        • {selectedBillIds.length} selected
+                      </span>
+                    </label>
+                    <p className="text-[11px] text-slate-400">
+                      Select one or more bills and enter the specific amount to reduce for each.
+                    </p>
+                  </div>
+
+                  {/* Filter toggle: Pending (Balance != 0) vs All Bills */}
+                  <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[11px] font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setBillFilterNonZeroOnly(true)}
+                      className={`px-2.5 py-0.5 rounded-md transition-all cursor-pointer ${
+                        billFilterNonZeroOnly
+                          ? 'bg-white text-indigo-700 font-bold shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Pending (Bal ≠ 0)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBillFilterNonZeroOnly(false)}
+                      className={`px-2.5 py-0.5 rounded-md transition-all cursor-pointer ${
+                        !billFilterNonZeroOnly
+                          ? 'bg-white text-indigo-700 font-bold shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      All Bills ({dealerBills.length})
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bills selection list container */}
+                {isLoadingBills ? (
+                  <div className="p-6 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto text-indigo-600 mb-1" />
+                    <span className="text-xs">Loading bills for this dealer...</span>
+                  </div>
+                ) : displayedBills.length === 0 ? (
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-center space-y-1">
+                    <p className="text-xs text-slate-600 font-medium">
+                      No bills found with {billFilterNonZeroOnly ? 'pending balance (balance_amount ≠ ₹0)' : 'this dealer'}.
+                    </p>
+                    {billFilterNonZeroOnly && dealerBills.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setBillFilterNonZeroOnly(false)}
+                        className="text-xs text-indigo-600 hover:underline font-semibold cursor-pointer"
+                      >
+                        Click here to view all {dealerBills.length} bills
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="max-h-60 overflow-y-auto space-y-2 pr-1 border border-slate-200 rounded-xl p-2 bg-slate-50/50 divide-y divide-slate-100">
+                    {displayedBills.map((b) => {
+                      const isSelected = selectedBillIds.includes(b.id);
+                      const currentRedAmount = billReductionAmounts[b.id] || '';
+                      const parsedRed = parseFloat(currentRedAmount) || 0;
+                      const newBillBal = Math.max(0, Number(b.balance_amount ?? 0) - parsedRed);
+
+                      return (
+                        <div
+                          key={b.id}
+                          className={`p-2.5 rounded-xl border transition-all space-y-2 text-xs ${
+                            isSelected
+                              ? 'bg-indigo-50/70 border-indigo-300 shadow-2xs ring-1 ring-indigo-500/20'
+                              : 'bg-white border-slate-200/80 hover:bg-white/90 hover:border-slate-300'
+                          }`}
+                        >
+                          {/* Top row: Checkbox, Bill #, Firm, Total, Current Balance */}
+                          <div
+                            onClick={() => handleToggleSelectBill(b)}
+                            className="flex items-center justify-between gap-3 cursor-pointer select-none"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div
+                                className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                  isSelected
+                                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                                    : 'border-slate-300 bg-white'
+                                }`}
+                              >
+                                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-bold text-slate-900 truncate">
+                                    Bill #{b.order_number}
+                                  </span>
+                                  {getFirmBadge(b.firm)}
+                                </div>
+                                <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                                  <Clock className="w-3 h-3" />
+                                  <span>{formatDateTime(b.created_at)}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <div className="text-[11px] text-slate-500">
+                                Total: <span className="font-mono font-semibold text-slate-700">₹{b.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="font-mono font-bold text-xs">
+                                Bal:{' '}
+                                <span className={b.balance_amount > 0 ? 'text-amber-700 font-extrabold' : 'text-emerald-700'}>
+                                  ₹{b.balance_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* If Selected: Individual Amount to Reduce for this bill */}
+                          {isSelected && (
+                            <div className="pt-2 border-t border-indigo-100/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-white/90 p-2.5 rounded-lg border border-indigo-200">
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between text-[11px] font-semibold text-indigo-950 mb-1">
+                                  <span>Amount to reduce from this bill:</span>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSetFullBillBalance(b);
+                                      }}
+                                      className="text-[10px] bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-1.5 py-0.5 rounded font-bold cursor-pointer transition-colors"
+                                    >
+                                      Full Bal (₹{b.balance_amount})
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleAllocateRemainingToBill(b);
+                                      }}
+                                      className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-medium cursor-pointer transition-colors"
+                                    >
+                                      Max Avail
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="relative">
+                                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">
+                                    ₹
+                                  </span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    placeholder="0.00"
+                                    value={currentRedAmount}
+                                    onChange={(e) => handleBillReductionChange(b.id, e.target.value)}
+                                    className="form-input w-full pl-7 pr-3 py-1.5 text-xs rounded-md font-mono font-bold text-slate-900 border-indigo-200 focus:border-indigo-600 focus:ring-indigo-600 bg-white"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="sm:text-right shrink-0 text-[11px] bg-slate-50 p-1.5 rounded sm:bg-transparent sm:p-0">
+                                <span className="text-slate-500">New Bill Bal: </span>
+                                <span className="font-mono font-bold text-slate-800">
+                                  ₹{newBillBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Step 4: Multi-Bill Allocation & Remaining Summary Bar */}
+                <div className="p-3 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    <div className="bg-white p-2 rounded-lg border border-indigo-100">
+                      <div className="text-[11px] text-slate-500 font-medium">Transaction Amount:</div>
+                      <div className="font-mono font-bold text-slate-900">
+                        ₹{parsedTxPayment.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-2 rounded-lg border border-indigo-100">
+                      <div className="text-[11px] text-slate-500 font-medium">
+                        Allocated to Bills ({selectedBillIds.length}):
+                      </div>
+                      <div className="font-mono font-bold text-indigo-700">
+                        ₹{totalAllocatedReduction.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-2 rounded-lg border border-indigo-100">
+                      <div className="text-[11px] text-slate-500 font-medium">Remaining Amount:</div>
+                      <div
+                        className={`font-mono font-extrabold ${
+                          totalAllocatedReduction > parsedTxPayment
+                            ? 'text-red-600'
+                            : 'text-emerald-700'
+                        }`}
+                      >
+                        ₹{remainingTxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {totalAllocatedReduction > parsedTxPayment && (
+                    <p className="text-[11px] text-red-600 font-semibold">
+                      ⚠️ Total allocated reductions exceed the transaction payment amount.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="form-label text-slate-700 font-bold block mb-1 text-xs">
+                  Transaction Notes (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Cheque number, reference ID, or remarks..."
+                  value={txNotes}
+                  onChange={(e) => setTxNotes(e.target.value)}
+                  className="form-input w-full p-2.5 text-xs rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Actions: Cancel & Done */}
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowTransactionModal(false)}
+                  disabled={isSubmittingTx}
+                  className="btn-base btn-secondary text-xs px-4 py-2.5 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingTx || (totalAllocatedReduction > parsedTxPayment && parsedTxPayment > 0)}
+                  className="btn-base btn-primary text-xs px-5 py-2.5 flex items-center gap-1.5 cursor-pointer font-bold disabled:opacity-50"
+                >
+                  {isSubmittingTx ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Done</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

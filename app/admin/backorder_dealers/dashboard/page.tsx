@@ -99,6 +99,18 @@ function BackorderDealersContent() {
     });
   }, [items, selectedCompanyId, searchQuery]);
 
+  // Total items per order map
+  const orderBackorderItemsCountMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    items.forEach((it) => {
+      const key = it.order_id || it.dealer_id;
+      if (key) {
+        map[key] = (map[key] || 0) + 1;
+      }
+    });
+    return map;
+  }, [items]);
+
   const totalDealersCount = items.length;
 
   return (
@@ -212,11 +224,10 @@ function BackorderDealersContent() {
                 <table className="w-full text-left text-xs sm:text-sm border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-bold text-[11px] tracking-wider">
-                      <th className="py-3 px-4">Record ID</th>
                       <th className="py-3 px-4">Dealer Name</th>
                       <th className="py-3 px-4">Company</th>
-                      <th className="py-3 px-4">Order / Product</th>
-                      <th className="py-3 px-4 text-center">Req / Pending Qty</th>
+                      <th className="py-3 px-4">Order</th>
+                      <th className="py-3 px-4 text-center">Total items</th>
                       <th className="py-3 px-4 text-center">Back Type</th>
                       <th className="py-3 px-4 text-right">Action</th>
                     </tr>
@@ -228,14 +239,11 @@ function BackorderDealersContent() {
                       const mobile = item.dealer?.mobile || '';
                       const compName = item.order_item?.product?.company?.name || 'N/A';
                       const orderNum = item.order?.order_number ? `Order #${item.order.order_number}` : 'N/A';
-                      const prodName = item.order_item?.product?.name || '';
+                      const countKey = item.order_id || item.dealer_id;
+                      const totalItems = countKey && orderBackorderItemsCountMap[countKey] ? orderBackorderItemsCountMap[countKey] : 1;
 
                       return (
                         <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-3 px-4 font-mono text-slate-500 text-xs font-semibold">
-                            {item.id.length > 8 ? `${item.id.slice(0, 8)}...` : item.id}
-                          </td>
-
                           <td className="py-3 px-4">
                             <div className="font-bold text-slate-900">{dealerName}</div>
                             {shopName && (
@@ -260,15 +268,10 @@ function BackorderDealersContent() {
 
                           <td className="py-3 px-4">
                             <div className="font-semibold text-slate-800">{orderNum}</div>
-                            {prodName && (
-                              <div className="text-xs text-indigo-600 font-medium">
-                                {prodName}
-                              </div>
-                            )}
                           </td>
 
                           <td className="py-3 px-4 text-center font-extrabold text-indigo-700 text-sm">
-                            {item.pending_quantity}
+                            {totalItems}
                           </td>
 
                           <td className="py-3 px-4 text-center">

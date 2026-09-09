@@ -92,7 +92,7 @@ export async function addOrderPayment(params: {
       if (orderData.balance_amount !== null && orderData.balance_amount !== undefined) {
         currentBalance = Number(orderData.balance_amount);
       } else {
-        currentBalance = Number(orderData.total_amount ?? orderData.amount ?? 0);
+        currentBalance = Number(orderData.total_amount ?? 0);
       }
       if (orderData.firm) {
         orderFirm = orderData.firm;

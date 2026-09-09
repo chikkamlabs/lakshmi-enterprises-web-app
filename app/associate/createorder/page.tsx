@@ -35,6 +35,9 @@ export interface SelectedOrderItem {
   id?: string;
   product: ProductSearchResult;
   requested_quantity: number;
+  approved_quantity?: number;
+  released_quantity?: number;
+  line_total?: number;
   mrp: number;
   associate_mrp: number;
   discount: number;
@@ -166,6 +169,11 @@ function CreateOrderContent() {
                   ? rawAssocMrp - (rawAssocMrp * rawDisc) / 100
                   : rawAssocMrp
               );
+              const rawReqQty = it.requested_quantity !== undefined && it.requested_quantity !== null ? Number(it.requested_quantity) : 1;
+              const rawAppQty = it.approved_quantity !== undefined && it.approved_quantity !== null ? Number(it.approved_quantity) : 0;
+              const rawRelQty = it.released_quantity !== undefined && it.released_quantity !== null ? Number(it.released_quantity) : 0;
+              const rawLineTotal = it.line_total !== undefined && it.line_total !== null ? Number(it.line_total) : rawReqQty * rawSp;
+
               return {
                 id: it.id,
                 product: it.product || {
@@ -175,7 +183,10 @@ function CreateOrderContent() {
                   selling_price: rawSp,
                   mrp: rawMrp,
                 },
-                requested_quantity: it.requested_quantity || 1,
+                requested_quantity: rawReqQty,
+                approved_quantity: rawAppQty,
+                released_quantity: rawRelQty,
+                line_total: rawLineTotal,
                 mrp: rawMrp,
                 associate_mrp: rawAssocMrp,
                 discount: rawDisc,
@@ -253,6 +264,9 @@ function CreateOrderContent() {
         {
           product,
           requested_quantity: 1,
+          approved_quantity: 0,
+          released_quantity: 0,
+          line_total: initialSellingPrice,
           mrp: prodMrp,
           associate_mrp: assocMrp,
           discount: initialDiscount,
@@ -411,13 +425,19 @@ function CreateOrderContent() {
     setOrderItems((prev) => prev.filter((item) => item.product.id !== productId));
   };
 
+  const isApprovingPending = approvingStatus?.toLowerCase() === 'pending';
+
   // Total order amount (sum of line totals)
   const totalOrderAmount = useMemo(() => {
-    return orderItems.reduce(
-      (sum, item) => sum + (Number(item.selling_price) || 0) * (Number(item.requested_quantity) || 0),
-      0
-    );
-  }, [orderItems]);
+    return orderItems.reduce((sum, item) => {
+      const lineTotal = isApprovingPending
+        ? (Number(item.selling_price) || 0) * (Number(item.requested_quantity) || 0)
+        : (item.line_total !== undefined && item.line_total !== null
+            ? Number(item.line_total)
+            : (Number(item.selling_price) || 0) * (Number(item.requested_quantity) || 0));
+      return sum + lineTotal;
+    }, 0);
+  }, [orderItems, isApprovingPending]);
 
   // Save / Update Order Action
   const handleSaveOrder = async (associateStatus: 'Draft' | 'Submitted') => {
@@ -880,7 +900,11 @@ function CreateOrderContent() {
           ) : (
             <div className="space-y-3 divide-y divide-slate-100">
               {orderItems.map((item, idx) => {
-                const itemLineTotal = (Number(item.selling_price) || 0) * (Number(item.requested_quantity) || 0);
+                const itemLineTotal = isApprovingPending
+                  ? (Number(item.selling_price) || 0) * (Number(item.requested_quantity) || 0)
+                  : (item.line_total !== undefined && item.line_total !== null
+                      ? Number(item.line_total)
+                      : (Number(item.selling_price) || 0) * (Number(item.requested_quantity) || 0));
                 const itemKey = item.id || item.product.id;
                 const isItemSaving = savingItemKey === itemKey;
                 const isItemSaved = savedItemKeys[itemKey];
@@ -917,8 +941,8 @@ function CreateOrderContent() {
                       )}
                     </div>
 
-                    {/* Pricing, Discount, Quantity, Line Total & Tick Button Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200/70 text-xs items-end">
+                    {/* Pricing, Discount, Quantity, App qty, Rel qty, Line Total & Tick Button Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-9 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200/70 text-xs items-end">
                       {/* Product MRP (order_items.mrp) */}
                       <div>
                         <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">
@@ -1017,12 +1041,32 @@ function CreateOrderContent() {
                         </div>
                       </div>
 
+                      {/* App qty (approved_quantity) */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 whitespace-nowrap">
+                          App qty
+                        </label>
+                        <div className="h-6 py-1 px-1.5 bg-emerald-50/70 border border-emerald-200/80 rounded text-xs font-bold font-mono text-emerald-800 text-center flex items-center justify-center">
+                          {item.approved_quantity !== undefined && item.approved_quantity !== null ? item.approved_quantity : 0}
+                        </div>
+                      </div>
+
+                      {/* Rel qty (released_quantity) */}
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 whitespace-nowrap">
+                          Rel qty
+                        </label>
+                        <div className="h-6 py-1 px-1.5 bg-sky-50/70 border border-sky-200/80 rounded text-xs font-bold font-mono text-sky-800 text-center flex items-center justify-center">
+                          {item.released_quantity !== undefined && item.released_quantity !== null ? item.released_quantity : 0}
+                        </div>
+                      </div>
+
                       {/* Line Total */}
                       <div>
-                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 whitespace-nowrap">
                           Line Total (₹)
                         </label>
-                        <div className="py-1 px-1.5 bg-indigo-50/70 border border-indigo-100 rounded text-xs font-bold font-mono text-indigo-900 text-right whitespace-nowrap">
+                        <div className="h-6 py-1 px-1.5 bg-indigo-50/70 border border-indigo-100 rounded text-xs font-bold font-mono text-indigo-900 text-right whitespace-nowrap flex items-center justify-end">
                           ₹{itemLineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </div>
                       </div>

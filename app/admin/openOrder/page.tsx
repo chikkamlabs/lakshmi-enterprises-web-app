@@ -7,7 +7,6 @@ import AdminSidebar from '../sidebar/page';
 import {
   getOrderById,
   saveOrderApproval,
-  updateSingleOrderItem,
   getStaffMembers,
   Order,
   OrderItem,
@@ -80,8 +79,6 @@ function OpenOrderContent() {
 
   // Editable Order Items State (all fields in row)
   const [rowState, setRowState] = useState<{ [itemId: string]: EditableItemRow }>({});
-  const [savingRowId, setSavingRowId] = useState<string | null>(null);
-  const [savedRowIds, setSavedRowIds] = useState<{ [itemId: string]: boolean }>({});
 
   // Load Order Details, Items, Dealer and Staff
   useEffect(() => {
@@ -210,80 +207,6 @@ function OpenOrderContent() {
     });
   };
 
-  // Save single item row to database when tick button is clicked and sync grand total to orders.amount
-  const handleSaveSingleRow = async (itemId: string) => {
-    const row = rowState[itemId];
-    if (!row || !order) return;
-
-    setSavingRowId(itemId);
-    try {
-      const currentGrandTotal = Object.values(rowState).reduce(
-        (sum, r) => sum + (r.id === itemId ? (Number(row.line_total) || 0) : (Number(r.line_total) || 0)),
-        0
-      );
-
-      const ok = await updateSingleOrderItem({
-        itemId: row.id,
-        orderId: order.id,
-        requested_quantity: row.requested_quantity,
-        approved_quantity: row.approved_quantity,
-        released_quantity: row.released_quantity,
-        mrp: row.mrp,
-        associate_mrp: row.mrp,
-        discount: row.discount,
-        selling_price: row.selling_price,
-        ad_discount: row.ad_discount,
-        notes: row.notes,
-        line_total: row.line_total,
-      });
-
-      if (ok) {
-        setSavedRowIds((prev) => ({ ...prev, [itemId]: true }));
-        setTimeout(() => {
-          setSavedRowIds((prev) => ({ ...prev, [itemId]: false }));
-        }, 2500);
-
-        setRowState((prev) => ({
-          ...prev,
-          [itemId]: { ...prev[itemId], isDirty: false },
-        }));
-
-        setOrder((prev) =>
-          prev
-            ? {
-                ...prev,
-                total_amount: currentGrandTotal,
-                amount: currentGrandTotal,
-              }
-            : prev
-        );
-
-        setItems((prev) =>
-          prev.map((it) =>
-            it.id === itemId
-              ? {
-                  ...it,
-                  requested_quantity: row.requested_quantity,
-                  approved_quantity: row.approved_quantity,
-                  released_quantity: row.released_quantity,
-                  mrp: row.mrp,
-                  discount: row.discount,
-                  selling_price: row.selling_price,
-                  ad_discount: row.ad_discount,
-                  notes: row.notes,
-                  line_total: row.line_total,
-                }
-              : it
-          )
-        );
-      }
-    } catch (err) {
-      console.error('Failed to update single row:', err);
-    } finally {
-      setSavingRowId(null);
-    }
-  };
-
   // Grand total computed across all row items
   const grandTotal = useMemo(() => {
     return Object.values(rowState).reduce(
@@ -302,15 +225,27 @@ function OpenOrderContent() {
     try {
       const updatedItemsPayload = items.map((item) => {
         const row = rowState[item.id] || {
+          requested_quantity: item.requested_quantity || 0,
           approved_quantity: item.approved_quantity || 0,
+          released_quantity: item.released_quantity || 0,
+          mrp: item.mrp || 0,
+          discount: item.discount || 0,
           selling_price: item.selling_price || 0,
+          ad_discount: item.ad_discount || 0,
           line_total: item.line_total || 0,
+          notes: item.notes || '',
         };
         return {
           id: item.id,
-          approved_quantity: row.approved_quantity,
-          selling_price: row.selling_price,
-          line_total: row.line_total,
+          requested_quantity: Number(row.requested_quantity) || 0,
+          approved_quantity: Number(row.approved_quantity) || 0,
+          released_quantity: Number(row.released_quantity) || 0,
+          mrp: Number(row.mrp) || 0,
+          discount: Number(row.discount) || 0,
+          selling_price: Number(row.selling_price) || 0,
+          ad_discount: Number(row.ad_discount) || 0,
+          notes: row.notes || '',
+          line_total: Number(row.line_total) || 0,
         };
       });
 
@@ -543,7 +478,6 @@ function OpenOrderContent() {
                       <th className="py-2.5 px-1.5 text-center">Ad Disc (%)</th>
                       <th className="py-2.5 px-2 text-right">Line Total (₹)</th>
                       <th className="py-2.5 px-2">Notes</th>
-                      <th className="py-2.5 px-1.5 text-center">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 text-xs">
@@ -560,9 +494,6 @@ function OpenOrderContent() {
                         line_total: item.line_total || 0,
                         notes: item.notes || '',
                       };
-
-                      const isRowSaving = savingRowId === item.id;
-                      const isRowSaved = savedRowIds[item.id];
 
                       return (
                         <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
@@ -722,29 +653,6 @@ function OpenOrderContent() {
                               }
                               className="w-full text-xs py-1 px-1.5 rounded border border-slate-200 bg-white focus:ring-1 focus:ring-indigo-500"
                             />
-                          </td>
-
-                          {/* Small Tick Button Action */}
-                          <td className="py-2.5 px-1 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleSaveSingleRow(item.id)}
-                              disabled={isRowSaving}
-                              title="Update this item in database"
-                              className={`p-1.5 rounded-md transition-all cursor-pointer inline-flex items-center justify-center ${
-                                isRowSaved
-                                  ? 'bg-emerald-600 text-white shadow-2xs'
-                                  : row.isDirty
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-600 hover:text-white ring-2 ring-emerald-400/50'
-                                  : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-600 hover:text-white'
-                              }`}
-                            >
-                              {isRowSaving ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                              )}
-                            </button>
                           </td>
                         </tr>
                       );

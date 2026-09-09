@@ -25,8 +25,9 @@ function AddBackorderProductContent() {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Search filter for product dropdown/selector
+  // Search filter and dropdown state
   const [productSearchQuery, setProductSearchQuery] = useState<string>('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
 
   // Form State
   const [selectedProductId, setSelectedProductId] = useState<string>('');
@@ -41,9 +42,6 @@ function AddBackorderProductContent() {
       try {
         const prods = await getStoredProducts();
         setProducts(prods || []);
-        if (prods && prods.length > 0) {
-          setSelectedProductId(prods[0].id);
-        }
       } catch (err) {
         console.error('Error loading products:', err);
       } finally {
@@ -65,10 +63,14 @@ function AddBackorderProductContent() {
     });
   }, [products, productSearchQuery]);
 
+  const selectedProductObj = useMemo(() => {
+    return products.find((p) => p.id === selectedProductId) || null;
+  }, [products, selectedProductId]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProductId) {
-      setErrorMsg('Please select a product.');
+      setErrorMsg('Please search and select a product.');
       return;
     }
 
@@ -92,7 +94,7 @@ function AddBackorderProductContent() {
       if (result) {
         router.push('/admin/backorder_products/dashboard');
       } else {
-        setErrorMsg('Failed to create backorder product record.');
+        setErrorMsg('Failed to create/update backorder product record.');
         setSubmitting(false);
       }
     } catch (err) {
@@ -102,7 +104,6 @@ function AddBackorderProductContent() {
     }
   };
 
-  const selectedProductObj = products.find((p) => p.id === selectedProductId);
   const calculatedPendingQty = Math.max(0, (Number(requiredQuantity) || 0) - (Number(orderedQuantity) || 0));
 
   return (
@@ -165,45 +166,83 @@ function AddBackorderProductContent() {
                       <input
                         type="text"
                         value={productSearchQuery}
-                        onChange={(e) => setProductSearchQuery(e.target.value)}
-                        placeholder="Type to search product by name, code, or company..."
-                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                        onChange={(e) => {
+                          setProductSearchQuery(e.target.value);
+                          setIsDropdownOpen(true);
+                        }}
+                        onFocus={() => setIsDropdownOpen(true)}
+                        placeholder="Search product by name, code, or company..."
+                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
                       />
                     </div>
 
-                    <select
-                      value={selectedProductId}
-                      onChange={(e) => setSelectedProductId(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs sm:text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-                    >
-                      {filteredProducts.length === 0 ? (
-                        <option value="" disabled>
-                          No products matching &quot;{productSearchQuery}&quot;
-                        </option>
-                      ) : (
-                        filteredProducts.map((prod) => (
-                          <option key={prod.id} value={prod.id}>
-                            {prod.name} ({prod.product_code}) {prod.company?.name ? `- ${prod.company.name}` : ''}
-                          </option>
-                        ))
-                      )}
-                    </select>
+                    {/* Search Results Dropdown List */}
+                    {isDropdownOpen && (
+                      <div className="max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-md divide-y divide-slate-100 z-10">
+                        {filteredProducts.length === 0 ? (
+                          <div className="p-3 text-xs text-slate-500 text-center">
+                            No products matching &quot;{productSearchQuery}&quot;
+                          </div>
+                        ) : (
+                          filteredProducts.slice(0, 30).map((prod) => {
+                            const isSelected = selectedProductId === prod.id;
+                            return (
+                              <button
+                                key={prod.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedProductId(prod.id);
+                                  setProductSearchQuery(`${prod.name} (${prod.product_code})`);
+                                  setIsDropdownOpen(false);
+                                }}
+                                className={`w-full text-left p-2.5 transition-colors cursor-pointer flex items-center justify-between gap-2 ${
+                                  isSelected ? 'bg-indigo-50/80 text-indigo-900 font-bold' : 'hover:bg-slate-50 text-slate-800'
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <div className="text-xs font-semibold truncate flex items-center gap-2">
+                                    <span>{prod.name}</span>
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 font-mono text-slate-600">
+                                      {prod.product_code}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                                    {prod.company?.name ? `Company: ${prod.company.name}` : ''}
+                                  </div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <span className="text-xs font-mono font-bold text-slate-700">
+                                    ₹{prod.selling_price}
+                                  </span>
+                                  {isSelected && (
+                                    <CheckCircle2 className="w-4 h-4 text-indigo-600 ml-auto mt-0.5" />
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
               {selectedProductObj && (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs space-y-1 text-slate-700">
+                <div className="bg-indigo-50/40 border border-indigo-100 rounded-xl p-4 text-xs space-y-2 text-slate-700">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 text-sm">{selectedProductObj.name}</span>
-                    <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-bold text-[11px] border border-indigo-100">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                      <span className="font-bold text-slate-900 text-sm">{selectedProductObj.name}</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-white text-indigo-700 font-bold text-[11px] border border-indigo-200">
                       Stock: {selectedProductObj.current_stock} {selectedProductObj.unit || 'pcs'}
                     </span>
                   </div>
-                  <div className="flex items-center gap-4 text-slate-500 font-mono text-[11px] pt-1">
-                    <span>Code: <b>{selectedProductObj.product_code}</b></span>
-                    <span>Company: <b>{selectedProductObj.company?.name || 'N/A'}</b></span>
-                    <span>Selling Price: <b>₹{selectedProductObj.selling_price}</b></span>
+                  <div className="flex flex-wrap items-center gap-4 text-slate-600 font-mono text-[11px] pt-1 border-t border-indigo-100/60">
+                    <span>Code: <b className="text-slate-900">{selectedProductObj.product_code}</b></span>
+                    <span>Company: <b className="text-slate-900">{selectedProductObj.company?.name || 'N/A'}</b></span>
+                    <span>Selling Price: <b className="text-indigo-700">₹{selectedProductObj.selling_price}</b></span>
                   </div>
                 </div>
               )}

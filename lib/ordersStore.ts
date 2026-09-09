@@ -542,8 +542,14 @@ export async function saveOrderApproval(params: {
   notes?: string;
   updatedItems: {
     id: string;
+    requested_quantity?: number;
     approved_quantity: number;
+    released_quantity?: number;
+    mrp?: number;
+    discount?: number;
     selling_price: number;
+    ad_discount?: number;
+    notes?: string;
     line_total: number;
   }[];
 }): Promise<boolean> {
@@ -576,17 +582,28 @@ export async function saveOrderApproval(params: {
       .eq('id', orderId);
 
     if (!orderErr) {
-      // Update each item
+      // Update each item with all provided fields
       for (const item of updatedItems) {
+        const itemPayload: Record<string, unknown> = {
+          approved_quantity: item.approved_quantity,
+          selling_price: item.selling_price,
+          line_total: item.line_total,
+          pending_quantity: Math.max(0, (item.approved_quantity ?? 0) - (Number(item.released_quantity) || 0)),
+          updated_at: new Date().toISOString(),
+        };
+        if (item.requested_quantity !== undefined) itemPayload.requested_quantity = item.requested_quantity;
+        if (item.released_quantity !== undefined) itemPayload.released_quantity = item.released_quantity;
+        if (item.mrp !== undefined) {
+          itemPayload.mrp = item.mrp;
+          itemPayload.associate_mrp = item.mrp;
+        }
+        if (item.discount !== undefined) itemPayload.discount = item.discount;
+        if (item.ad_discount !== undefined) itemPayload.ad_discount = item.ad_discount;
+        if (item.notes !== undefined) itemPayload.notes = item.notes;
+
         await supabase
           .from('order_items')
-          .update({
-            approved_quantity: item.approved_quantity,
-            selling_price: item.selling_price,
-            line_total: item.line_total,
-            pending_quantity: item.approved_quantity, // default pending = approved
-            updated_at: new Date().toISOString(),
-          })
+          .update(itemPayload)
           .eq('id', item.id);
       }
       success = true;
@@ -619,10 +636,19 @@ export async function saveOrderApproval(params: {
         updatedItems.forEach((uItem) => {
           const itemIdx = items.findIndex((it) => it.id === uItem.id);
           if (itemIdx !== -1) {
+            if (uItem.requested_quantity !== undefined) items[itemIdx].requested_quantity = uItem.requested_quantity;
             items[itemIdx].approved_quantity = uItem.approved_quantity;
+            if (uItem.released_quantity !== undefined) items[itemIdx].released_quantity = uItem.released_quantity;
+            if (uItem.mrp !== undefined) {
+              items[itemIdx].mrp = uItem.mrp;
+              items[itemIdx].associate_mrp = uItem.mrp;
+            }
+            if (uItem.discount !== undefined) items[itemIdx].discount = uItem.discount;
             items[itemIdx].selling_price = uItem.selling_price;
+            if (uItem.ad_discount !== undefined) items[itemIdx].ad_discount = uItem.ad_discount;
+            if (uItem.notes !== undefined) items[itemIdx].notes = uItem.notes;
             items[itemIdx].line_total = uItem.line_total;
-            items[itemIdx].pending_quantity = uItem.approved_quantity;
+            items[itemIdx].pending_quantity = Math.max(0, (uItem.approved_quantity ?? 0) - (Number(uItem.released_quantity) || 0));
             items[itemIdx].updated_at = new Date().toISOString();
           }
         });
