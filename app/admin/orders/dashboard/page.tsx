@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AdminHeader from '../../header/page';
 import AdminSidebar from '../../sidebar/page';
@@ -36,7 +36,157 @@ import {
   Building,
   Users,
   CreditCard,
+  ChevronDown,
+  Check,
+  X,
 } from 'lucide-react';
+
+function SearchableDealerSelect({
+  dealers,
+  value,
+  onChange,
+}: {
+  dealers: Dealer[];
+  value: string;
+  onChange: (dealerId: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectedDealer = useMemo(() => {
+    return dealers.find((d) => d.id === value);
+  }, [dealers, value]);
+
+  const filteredDealers = useMemo(() => {
+    if (!search.trim()) return dealers;
+    const q = search.toLowerCase().trim();
+    return dealers.filter(
+      (d) =>
+        (d.name && d.name.toLowerCase().includes(q)) ||
+        (d.dealer_code && d.dealer_code.toLowerCase().includes(q)) ||
+        (d.shop_name && d.shop_name.toLowerCase().includes(q)) ||
+        (d.mobile && d.mobile.includes(q)) ||
+        (d.address && d.address.toLowerCase().includes(q))
+    );
+  }, [dealers, search]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen((prev) => !prev)}
+        className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 flex items-center justify-between gap-1.5 focus:outline-none focus:border-indigo-500 hover:border-slate-300 transition-colors cursor-pointer text-left"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+      >
+        <span className="truncate font-medium">
+          {selectedDealer ? `${selectedDealer.name} (${selectedDealer.dealer_code})` : 'All Dealers'}
+        </span>
+        <div className="flex items-center gap-1 shrink-0 text-slate-400">
+          {value !== 'ALL' && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange('ALL');
+              }}
+              className="p-0.5 hover:text-slate-600 rounded hover:bg-slate-100 cursor-pointer"
+              title="Clear dealer selection"
+            >
+              <X className="w-3 h-3" />
+            </span>
+          )}
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        </div>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden animate-fade-in min-w-[240px]">
+          {/* Search Box */}
+          <div className="p-2 border-b border-slate-100 bg-slate-50/50">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search dealer by name or code..."
+                className="w-full pl-8 pr-2 py-1 text-xs rounded-md border border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+          </div>
+
+          {/* List of Dealers */}
+          <div className="max-h-56 overflow-y-auto divide-y divide-slate-50 text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                onChange('ALL');
+                setIsOpen(false);
+                setSearch('');
+              }}
+              className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-indigo-50/60 transition-colors cursor-pointer ${
+                value === 'ALL' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-700'
+              }`}
+            >
+              <span>All Dealers</span>
+              {value === 'ALL' && <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
+            </button>
+
+            {filteredDealers.length === 0 ? (
+              <div className="p-3 text-center text-slate-400 text-xs">No matching dealers found</div>
+            ) : (
+              filteredDealers.map((d) => {
+                const isSelected = value === d.id;
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => {
+                      onChange(d.id);
+                      setIsOpen(false);
+                      setSearch('');
+                    }}
+                    className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-indigo-50/60 transition-colors cursor-pointer ${
+                      isSelected ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-700'
+                    }`}
+                  >
+                    <div className="truncate pr-2">
+                      <div className="truncate font-semibold">{d.name}</div>
+                      <div className="text-[10px] text-slate-500 font-mono">
+                        {d.dealer_code} {d.shop_name ? `• ${d.shop_name}` : ''}
+                      </div>
+                    </div>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const getTodayDateString = () => {
   const now = new Date();
@@ -437,18 +587,11 @@ function OrdersDashboardContent() {
           {/* Dealer Select Dropdown */}
           <div className="bg-slate-50/70 border border-slate-200/90 rounded-xl p-3 hover:border-slate-300 focus-within:border-indigo-500 focus-within:bg-white transition-all space-y-1.5">
             <label className="text-xs font-semibold text-slate-700 block">Dealer</label>
-            <select
+            <SearchableDealerSelect
+              dealers={dealers}
               value={selectedDealerId}
-              onChange={(e) => setSelectedDealerId(e.target.value)}
-              className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
-            >
-              <option value="ALL">All Dealers</option>
-              {dealers.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} ({d.dealer_code})
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setSelectedDealerId(val)}
+            />
           </div>
 
           {/* Associate Select Dropdown */}

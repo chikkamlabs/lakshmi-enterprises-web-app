@@ -11,17 +11,23 @@ import {
   Building2,
   RefreshCw,
   Phone,
-  UserCheck,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import AdminHeader from '../../header/page';
 import AdminSidebar from '../../sidebar/page';
-import { getBackorderDealers, BackorderDealerItem } from '../../../../lib/backorderdealers';
+import { getBackorderDealers, deleteBackorderDealer, BackorderDealerItem } from '../../../../lib/backorderdealers';
 import { getStoredCompanies, Company } from '../../../../lib/companiesStore';
 
 function BackorderDealersContent() {
   const [items, setItems] = useState<BackorderDealerItem[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Selection & Deletion State
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -36,6 +42,7 @@ function BackorderDealersContent() {
       ]);
       setItems(dealersList || []);
       setCompanies(compList || []);
+      setSelectedIds([]);
     } catch (err) {
       console.error('Error loading backorder dealers:', err);
     } finally {
@@ -99,17 +106,38 @@ function BackorderDealersContent() {
     });
   }, [items, selectedCompanyId, searchQuery]);
 
-  // Total items per order map
-  const orderBackorderItemsCountMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    items.forEach((it) => {
-      const key = it.order_id || it.dealer_id;
-      if (key) {
-        map[key] = (map[key] || 0) + 1;
-      }
-    });
-    return map;
-  }, [items]);
+  // Selection helpers
+  const isAllSelected = filteredItems.length > 0 && selectedIds.length === filteredItems.length;
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredItems.map((item) => item.id));
+    }
+  };
+
+  const handleToggleItem = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  // Bulk Delete
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    setIsDeleting(true);
+    try {
+      await Promise.all(selectedIds.map((id) => deleteBackorderDealer(id)));
+      setItems((prev) => prev.filter((item) => !selectedIds.includes(item.id)));
+      setSelectedIds([]);
+      setShowDeleteConfirm(false);
+    } catch (err) {
+      console.error('Error deleting selected backorder dealers:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const totalDealersCount = items.length;
 
@@ -137,7 +165,7 @@ function BackorderDealersContent() {
               <button
                 type="button"
                 onClick={() => loadData(true)}
-                className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+                className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
                 title="Refresh List"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -170,18 +198,47 @@ function BackorderDealersContent() {
             </div>
           </div>
 
-          {/* Controls: Search & Company Filter */}
+          {/* Controls: Select All, Search, Delete Option & Company Filter */}
           <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-            {/* Search Input */}
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by Dealer ID, Name, Mobile, or Shop Name..."
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-              />
+            {/* Left Controls: Select All Checkbox + Search Bar + Delete Option */}
+            <div className="flex items-center gap-3 flex-1">
+              {/* Select All Small Checkbox beside left to search bar */}
+              <label
+                className="flex items-center gap-1.5 cursor-pointer select-none text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 px-2.5 py-2 border border-slate-200 rounded-lg shrink-0 transition-colors"
+                title="Select All"
+              >
+                <input
+                  type="checkbox"
+                  checked={isAllSelected}
+                  onChange={handleToggleSelectAll}
+                  className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
+                />
+                <span className="hidden sm:inline">Select All</span>
+              </label>
+
+              {/* Search Input */}
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by Dealer ID, Name, Mobile, or Shop Name..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                />
+              </div>
+
+              {/* Delete Option beside search bar when rows selected */}
+              {selectedIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs sm:text-sm font-semibold transition-colors cursor-pointer shrink-0 animate-fade-in"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete ({selectedIds.length})</span>
+                </button>
+              )}
             </div>
 
             {/* Company Select Filter */}
@@ -224,26 +281,51 @@ function BackorderDealersContent() {
                 <table className="w-full text-left text-xs sm:text-sm border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-bold text-[11px] tracking-wider">
+                      <th className="py-3 px-3 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isAllSelected}
+                          onChange={handleToggleSelectAll}
+                          className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </th>
+                      <th className="py-3 px-3 w-14 text-center">S.No</th>
                       <th className="py-3 px-4">Dealer Name</th>
                       <th className="py-3 px-4">Company</th>
                       <th className="py-3 px-4">Order</th>
-                      <th className="py-3 px-4 text-center">Total items</th>
                       <th className="py-3 px-4 text-center">Back Type</th>
                       <th className="py-3 px-4 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredItems.map((item) => {
+                    {filteredItems.map((item, index) => {
+                      const isChecked = selectedIds.includes(item.id);
                       const dealerName = item.dealer?.name || `Dealer #${item.dealer_id.slice(0, 8)}`;
                       const shopName = item.dealer?.shop_name || '';
                       const mobile = item.dealer?.mobile || '';
                       const compName = item.order_item?.product?.company?.name || 'N/A';
                       const orderNum = item.order?.order_number ? `Order #${item.order.order_number}` : 'N/A';
-                      const countKey = item.order_id || item.dealer_id;
-                      const totalItems = countKey && orderBackorderItemsCountMap[countKey] ? orderBackorderItemsCountMap[countKey] : 1;
 
                       return (
-                        <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                        <tr
+                          key={item.id}
+                          className={`transition-colors ${
+                            isChecked ? 'bg-indigo-50/50 hover:bg-indigo-50/80' : 'hover:bg-slate-50/80'
+                          }`}
+                        >
+                          <td className="py-3 px-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => handleToggleItem(item.id)}
+                              className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
+                            />
+                          </td>
+
+                          <td className="py-3 px-3 text-center text-xs font-bold text-slate-500">
+                            {index + 1}
+                          </td>
+
                           <td className="py-3 px-4">
                             <div className="font-bold text-slate-900">{dealerName}</div>
                             {shopName && (
@@ -268,10 +350,6 @@ function BackorderDealersContent() {
 
                           <td className="py-3 px-4">
                             <div className="font-semibold text-slate-800">{orderNum}</div>
-                          </td>
-
-                          <td className="py-3 px-4 text-center font-extrabold text-indigo-700 text-sm">
-                            {totalItems}
                           </td>
 
                           <td className="py-3 px-4 text-center">
@@ -305,6 +383,56 @@ function BackorderDealersContent() {
           </div>
         </main>
       </div>
+
+      {/* Confirmation Modal for Delete */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-5 sm:p-6 space-y-4 animate-scale-up border border-slate-200">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Delete Backorder Dealers</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Please confirm your action.</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-600">
+              Are you sure you want to delete <span className="font-bold text-slate-900">{selectedIds.length}</span> selected backorder dealer record{selectedIds.length > 1 ? 's' : ''}? This action cannot be undone.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteSelected}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirm Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -323,3 +451,4 @@ export default function BackorderDealersDashboardPage() {
     </Suspense>
   );
 }
+

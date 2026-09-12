@@ -16,6 +16,7 @@ import {
   Check,
 } from 'lucide-react';
 import StaffHeader from '../header/page';
+import { supabase } from '../../../lib/supabase';
 import {
   getOrderById,
   saveOrderPacking,
@@ -27,10 +28,6 @@ import {
   processBackorderItems,
   BackorderRequestItem,
 } from '../../../lib/backorderproductStore';
-import {
-  processBackorderDealers,
-  BackorderDealerRequest,
-} from '../../../lib/backorderdealers';
 
 interface ItemState {
   id: string;
@@ -236,7 +233,6 @@ function StaffOrderDetailContent() {
         // If packing status is partially packed ('partially_packed')
         if (packingStatus === 'partially_packed') {
           const backorderRequests: BackorderRequestItem[] = [];
-          const dealerBackorderRequests: BackorderDealerRequest[] = [];
 
           itemsState.forEach((item) => {
             const approvedQty = Number(item.approved_quantity) || 0;
@@ -252,17 +248,6 @@ function StaffOrderDetailContent() {
                     notes: `From Order ${order?.order_number || orderId}`,
                   });
                 }
-
-                if (order?.dealer_id && item.id) {
-                  dealerBackorderRequests.push({
-                    dealer_id: order.dealer_id,
-                    order_id: orderId,
-                    order_item_id: item.id,
-                    pending_quantity: diff,
-                    status: 'Pending',
-                    back_type: 'staff',
-                  });
-                }
               }
             }
           });
@@ -271,8 +256,43 @@ function StaffOrderDetailContent() {
             await processBackorderItems(backorderRequests);
           }
 
-          if (dealerBackorderRequests.length > 0) {
-            await processBackorderDealers(dealerBackorderRequests);
+          // Single row insertion for backorder_dealers
+          if (order?.dealer_id) {
+            const now = new Date().toISOString();
+            const singleDealerPayload = {
+              dealer_id: order.dealer_id,
+              order_id: orderId,
+              status: 'Pending',
+              created_at: now,
+              updated_at: now,
+              back_type: 'staff',
+            };
+
+            try {
+              const { error: insErr } = await supabase
+                .from('backorder_dealers')
+                .insert([singleDealerPayload]);
+              if (insErr) {
+                console.warn('Error inserting single row into backorder_dealers:', insErr.message);
+              }
+            } catch (err) {
+              console.warn('Supabase insert backorder_dealers error:', err);
+            }
+
+            // Sync with LocalStorage
+            if (typeof window !== 'undefined') {
+              try {
+                const raw = localStorage.getItem('lakshmi_erp_backorder_dealers');
+                const list = raw ? JSON.parse(raw) : [];
+                list.unshift({
+                  id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `bd-${Date.now()}`,
+                  ...singleDealerPayload,
+                });
+                localStorage.setItem('lakshmi_erp_backorder_dealers', JSON.stringify(list));
+              } catch (lsErr) {
+                console.error('LocalStorage error updating backorder_dealers:', lsErr);
+              }
+            }
           }
         }
 
