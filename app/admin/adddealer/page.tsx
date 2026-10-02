@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminHeader from '../header/page';
 import AdminSidebar from '../sidebar/page';
-import { addDealer, getStoredDealers } from '@/lib/dealersStore';
+import { addDealer, getStoredDealers, DealerFirmType } from '@/lib/dealersStore';
 import { getStoredGroups, Group } from '@/lib/groupsStore';
-import { Store, ArrowLeft, Loader2, Save, X, AlertCircle, CheckCircle2, Layers } from 'lucide-react';
+import { Store, ArrowLeft, Loader2, Save, X, AlertCircle, CheckCircle2, Layers, Building2 } from 'lucide-react';
 
 export default function AddDealerPage() {
   const router = useRouter();
@@ -19,6 +19,7 @@ export default function AddDealerPage() {
   const [name, setName] = useState('');
   const [groupId, setGroupId] = useState('');
   const [groups, setGroups] = useState<Group[]>([]);
+  const [firmType, setFirmType] = useState<DealerFirmType>('BOTH');
   const [mobile, setMobile] = useState('');
   const [shopName, setShopName] = useState('');
   const [address, setAddress] = useState('');
@@ -64,6 +65,7 @@ export default function AddDealerPage() {
         dealer_code: dealerCode.trim(),
         group_id: groupId || null,
         name: name.trim(),
+        firm_type: firmType,
         mobile: mobile.trim() || null,
         shop_name: shopName.trim() || null,
         address: address.trim() || null,
@@ -227,6 +229,23 @@ export default function AddDealerPage() {
                     className="form-input w-full rounded-lg border-slate-300"
                     placeholder="10-digit mobile number"
                   />
+                </div>
+
+                <div>
+                  <label htmlFor="firmType" className="form-label font-semibold text-slate-700 block mb-1">
+                    Firm Type <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="firmType"
+                    value={firmType}
+                    onChange={(e) => setFirmType(e.target.value as DealerFirmType)}
+                    className="form-input w-full rounded-lg border-slate-300 bg-white font-medium"
+                    required
+                  >
+                    <option value="BOTH">BOTH (LE & SLSA)</option>
+                    <option value="LE">LE (Lakshmi Enterprises)</option>
+                    <option value="SLSA">SLSA</option>
+                  </select>
                 </div>
               </div>
 

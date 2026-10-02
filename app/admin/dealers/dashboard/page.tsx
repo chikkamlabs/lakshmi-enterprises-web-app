@@ -21,6 +21,7 @@ import {
   Loader2,
   Layers,
   Filter,
+  Building2,
 } from 'lucide-react';
 
 export default function AdminDealersDashboardPage() {
@@ -28,6 +29,7 @@ export default function AdminDealersDashboardPage() {
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('ALL');
+  const [selectedFirm, setSelectedFirm] = useState<string>('ALL');
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState('');
@@ -84,7 +86,7 @@ export default function AdminDealersDashboardPage() {
     return dealers.reduce((sum, dealer) => sum + (Number(dealer.slsa_credit) || 0), 0);
   }, [dealers]);
 
-  // Filter dealers by group and search query
+  // Filter dealers by group, firm, and search query
   const filteredDealers = useMemo(() => {
     let result = dealers;
 
@@ -97,6 +99,10 @@ export default function AdminDealersDashboardPage() {
       );
     }
 
+    if (selectedFirm && selectedFirm !== 'ALL') {
+      result = result.filter((d) => (d.firm_type || 'BOTH') === selectedFirm);
+    }
+
     const query = searchQuery.toLowerCase().trim();
     if (query) {
       result = result.filter(
@@ -106,13 +112,14 @@ export default function AdminDealersDashboardPage() {
           (d.mobile || '').toLowerCase().includes(query) ||
           (d.shop_name || '').toLowerCase().includes(query) ||
           (d.address || '').toLowerCase().includes(query) ||
+          (d.firm_type || '').toLowerCase().includes(query) ||
           (d.group?.group_name || '').toLowerCase().includes(query) ||
           (d.group?.group_id || '').toLowerCase().includes(query)
       );
     }
 
     return result;
-  }, [dealers, searchQuery, selectedGroupId]);
+  }, [dealers, searchQuery, selectedGroupId, selectedFirm]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
@@ -250,6 +257,21 @@ export default function AdminDealersDashboardPage() {
                   ))}
                 </select>
               </div>
+
+              {/* Firm Filter */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
+                <select
+                  value={selectedFirm}
+                  onChange={(e) => setSelectedFirm(e.target.value)}
+                  className="form-input py-2 px-3 text-xs sm:text-sm rounded-lg border-slate-200 bg-white font-medium text-slate-700 focus:border-indigo-500 focus:ring-indigo-500"
+                >
+                  <option value="ALL">All Firms</option>
+                  <option value="BOTH">BOTH (LE & SLSA)</option>
+                  <option value="LE">LE</option>
+                  <option value="SLSA">SLSA</option>
+                </select>
+              </div>
             </div>
 
             <div className="text-xs text-slate-500 self-end sm:self-center shrink-0">
@@ -292,6 +314,7 @@ export default function AdminDealersDashboardPage() {
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider">
                         <th className="py-3.5 px-4">Dealer</th>
+                        <th className="py-3.5 px-4">Firm</th>
                         <th className="py-3.5 px-4">Group</th>
                         <th className="py-3.5 px-4">Shop Name</th>
                         <th className="py-3.5 px-4">Mobile</th>
@@ -307,6 +330,19 @@ export default function AdminDealersDashboardPage() {
                           <td className="py-3.5 px-4">
                             <div className="font-semibold text-slate-900">{dealer.name}</div>
                             <div className="text-xs text-indigo-600 font-mono font-medium">{dealer.dealer_code}</div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                dealer.firm_type === 'LE'
+                                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                  : dealer.firm_type === 'SLSA'
+                                  ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              }`}
+                            >
+                              {dealer.firm_type || 'BOTH'}
+                            </span>
                           </td>
                           <td className="py-3.5 px-4">
                             {dealer.group?.group_name ? (
@@ -398,6 +434,17 @@ export default function AdminDealersDashboardPage() {
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-xs font-mono font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
                               {dealer.dealer_code}
+                            </span>
+                            <span
+                              className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                                dealer.firm_type === 'LE'
+                                  ? 'bg-blue-50 text-blue-700 border-blue-100'
+                                  : dealer.firm_type === 'SLSA'
+                                  ? 'bg-purple-50 text-purple-700 border-purple-100'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                              }`}
+                            >
+                              {dealer.firm_type || 'BOTH'}
                             </span>
                             {dealer.group?.group_name && (
                               <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-100 flex items-center gap-1">
