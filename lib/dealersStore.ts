@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 
+export type DealerFirmType = 'LE' | 'SLSA' | 'BOTH';
+
 export interface Dealer {
   id: string;
   dealer_code: string;
@@ -13,6 +15,7 @@ export interface Dealer {
   mobile: string | null;
   shop_name: string | null;
   address: string | null;
+  firm_type?: DealerFirmType;
   current_credit?: number;
   credit_limit?: number;
   le_credit?: number;
@@ -67,6 +70,7 @@ export async function addDealer(
           mobile: newDealer.mobile || null,
           shop_name: newDealer.shop_name || null,
           address: newDealer.address || null,
+          firm_type: newDealer.firm_type || 'BOTH',
           le_credit: Number(newDealer.le_credit || 0),
           slsa_credit: Number(newDealer.slsa_credit || 0),
           le_credit_limit: Number(newDealer.le_credit_limit || 0),
@@ -121,6 +125,9 @@ export async function updateDealer(
     }
     if (updatedFields.address !== undefined) {
       payload.address = updatedFields.address;
+    }
+    if (updatedFields.firm_type !== undefined) {
+      payload.firm_type = updatedFields.firm_type;
     }
     if (updatedFields.status !== undefined) {
       payload.status = updatedFields.status;

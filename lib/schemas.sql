@@ -28,6 +28,13 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
+-- Dealer Firms Enum (LE, SLSA, BOTH)
+DO $$ BEGIN
+    CREATE TYPE public.dealer_firms AS ENUM ('LE', 'SLSA', 'BOTH');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
 -- User Roles in the ERP
 DO $$ BEGIN
     CREATE TYPE public.user_role AS ENUM ('admin', 'associate', 'staff');
@@ -210,6 +217,7 @@ CREATE TABLE IF NOT EXISTS public.dealers (
     mobile TEXT,
     shop_name TEXT,
     address TEXT,
+    firm_type public.dealer_firms NOT NULL DEFAULT 'BOTH',
     le_credit NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     slsa_credit NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     le_credit_limit NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
@@ -220,7 +228,8 @@ CREATE TABLE IF NOT EXISTS public.dealers (
 );
 
 ALTER TABLE IF EXISTS public.dealers 
-    ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES public.groups(id) ON DELETE SET NULL;
+       ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES public.groups(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS firm_type public.dealer_firms NOT NULL DEFAULT 'BOTH';
 
 -- ----------------------------------------------------------------------------
 -- 6. DEALER_TRANSACTIONS TABLE

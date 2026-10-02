@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AdminHeader from '../header/page';
 import AdminSidebar from '../sidebar/page';
-import { getDealerById, getStoredDealers, updateDealer, Dealer } from '@/lib/dealersStore';
+import { getDealerById, getStoredDealers, updateDealer, Dealer, DealerFirmType } from '@/lib/dealersStore';
 import { getStoredGroups, Group } from '@/lib/groupsStore';
 import { Edit2, ArrowLeft, Loader2, Save, X, AlertCircle, CheckCircle2, Store, Layers } from 'lucide-react';
 
@@ -24,6 +24,7 @@ function EditDealerForm() {
   const [name, setName] = useState('');
   const [groupId, setGroupId] = useState('');
   const [groups, setGroups] = useState<Group[]>([]);
+  const [firmType, setFirmType] = useState<DealerFirmType>('BOTH');
   const [mobile, setMobile] = useState('');
   const [shopName, setShopName] = useState('');
   const [address, setAddress] = useState('');
@@ -66,6 +67,7 @@ function EditDealerForm() {
             setDealerCode(dealer.dealer_code || '');
             setName(dealer.name || '');
             setGroupId(dealer.group_id || dealer.group?.id || '');
+            setFirmType((dealer.firm_type as DealerFirmType) || 'BOTH');
             setMobile(dealer.mobile || '');
             setShopName(dealer.shop_name || '');
             setAddress(dealer.address || '');
@@ -119,6 +121,7 @@ function EditDealerForm() {
         dealer_code: dealerCode.trim(),
         group_id: groupId || null,
         name: name.trim(),
+        firm_type: firmType,
         mobile: mobile.trim() || null,
         shop_name: shopName.trim() || null,
         address: address.trim() || null,
@@ -295,6 +298,23 @@ function EditDealerForm() {
                   onChange={(e) => setMobile(e.target.value)}
                   className="form-input w-full rounded-lg border-slate-300"
                 />
+              </div>
+
+              <div>
+                <label htmlFor="editFirmType" className="form-label font-semibold text-slate-700 block mb-1">
+                  Firm Type <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="editFirmType"
+                  value={firmType}
+                  onChange={(e) => setFirmType(e.target.value as DealerFirmType)}
+                  className="form-input w-full rounded-lg border-slate-300 bg-white font-medium"
+                  required
+                >
+                  <option value="BOTH">BOTH (LE & SLSA)</option>
+                  <option value="LE">LE (Lakshmi Enterprises)</option>
+                  <option value="SLSA">SLSA</option>
+                </select>
               </div>
             </div>
 
