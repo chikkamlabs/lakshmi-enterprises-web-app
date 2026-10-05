@@ -104,6 +104,52 @@ export async function addProduct(
 }
 
 /**
+ * Add multiple products directly to Supabase `products` table in batch.
+ */
+export async function addMultipleProducts(
+  productsList: Array<Omit<Product, 'id' | 'created_at' | 'updated_at' | 'company' | 'category'>>
+): Promise<Product[]> {
+  try {
+    if (!productsList || productsList.length === 0) return [];
+
+    const payload = productsList.map((p) => ({
+      product_code: p.product_code,
+      barcode: p.barcode || null,
+      name: p.name,
+      company_id: p.company_id || null,
+      category_id: p.category_id || null,
+      purchase_price: Number(p.purchase_price || 0),
+      selling_price: Number(p.selling_price || 0),
+      mrp: Number(p.mrp || 0),
+      ad_disc: p.ad_disc !== undefined && p.ad_disc !== null ? Number(p.ad_disc) : 0,
+      current_stock: Number(p.current_stock || 0),
+      low_stock: Number(p.low_stock ?? 10),
+      unit: p.unit || 'pcs',
+      status: p.status ?? true,
+    }));
+
+    const { data, error } = await supabase
+      .from('products')
+      .insert(payload)
+      .select(`
+        *,
+        company:companies(id, name, company_code),
+        category:categories(id, name, category_code)
+      `);
+
+    if (error) {
+      console.error('Supabase error batch inserting products:', error.message);
+      throw new Error(error.message);
+    }
+
+    return (data as unknown as Product[]) || [];
+  } catch (err) {
+    console.error('Failed to batch insert products into Supabase:', err);
+    throw err;
+  }
+}
+
+/**
  * Update an existing product directly in Supabase `products` table.
  */
 export async function updateProduct(
