@@ -13,6 +13,7 @@ import {
   UserCheck,
   Building2,
   Layers,
+  Tag,
   ChevronDown,
   ChevronRight,
   Menu,
@@ -41,6 +42,7 @@ export default function AdminSidebar() {
     if (pathname?.includes('/dealers')) return 'dealers';
     if (pathname?.includes('/adddealer')) return 'dealers';
     if (pathname?.includes('/editdealer')) return 'dealers';
+    if (pathname?.includes('/categories') || pathname?.includes('/catgeories')) return 'categories';
     if (pathname?.includes('/companies')) return 'companies';
     if (pathname?.includes('/addcompany')) return 'companies';
     if (pathname?.includes('/companyedit')) return 'companies';
@@ -183,6 +185,20 @@ export default function AdminSidebar() {
         >
           <Store className="w-4 h-4 shrink-0" />
           <span>Dealers</span>
+        </Link>
+
+        {/* Categories */}
+        <Link
+          href="/admin/categories/dashboard"
+          onClick={() => setMobileOpen(false)}
+          className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+            selected === 'categories'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+          }`}
+        >
+          <Tag className="w-4 h-4 shrink-0" />
+          <span>Categories</span>
         </Link>
 
         {/* 6. Groups */}
