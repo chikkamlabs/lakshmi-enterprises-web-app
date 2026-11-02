@@ -21,6 +21,15 @@ export interface Product {
   category?: { id: string; name: string; category_code: string } | null;
 }
 
+// ADD THIS BELOW THE PRODUCT INTERFACE
+
+export type NewProduct = Omit<
+  Product,
+  'id' | 'product_code' | 'created_at' | 'updated_at' | 'company' | 'category'
+> & {
+  product_code?: never;
+};
+
 /**
  * Fetch all products directly from Supabase `products` table,
  * including joined company and category information.
@@ -62,14 +71,13 @@ export async function getStoredProducts(): Promise<Product[]> {
  * Add a new product directly to Supabase `products` table.
  */
 export async function addProduct(
-  newProduct: Omit<Product, 'id' | 'created_at' | 'updated_at' | 'company' | 'category'>
+  newProduct: NewProduct
 ): Promise<Product | null> {
   try {
     const { data, error } = await supabase
       .from('products')
       .insert([
         {
-          product_code: newProduct.product_code,
           barcode: newProduct.barcode || null,
           name: newProduct.name,
           company_id: newProduct.company_id || null,
@@ -107,13 +115,12 @@ export async function addProduct(
  * Add multiple products directly to Supabase `products` table in batch.
  */
 export async function addMultipleProducts(
-  productsList: Array<Omit<Product, 'id' | 'created_at' | 'updated_at' | 'company' | 'category'>>
+  productsList: NewProduct[]
 ): Promise<Product[]> {
   try {
     if (!productsList || productsList.length === 0) return [];
 
     const payload = productsList.map((p) => ({
-      product_code: p.product_code,
       barcode: p.barcode || null,
       name: p.name,
       company_id: p.company_id || null,

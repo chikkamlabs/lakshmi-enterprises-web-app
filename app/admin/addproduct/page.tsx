@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminHeader from '../header/page';
 import AdminSidebar from '../sidebar/page';
-import { addMultipleProducts, getStoredProducts } from '@/lib/productsStore';
+import { addMultipleProducts } from '@/lib/productsStore';
 import { getStoredCompanies, Company } from '@/lib/companiesStore';
 import { getStoredCategories, Category } from '@/lib/categoriesStore';
 import {
@@ -22,7 +22,6 @@ import {
 
 interface ProductRowItem {
   id: string;
-  product_code: string;
   product_name: string;
   company_id: string;
   category_id: string;
@@ -42,14 +41,12 @@ export default function AddMultipleProductsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [baseProductCount, setBaseProductCount] = useState(0);
   const rowIdCounter = useRef(1);
 
   // Multi-row product state (Starts with PRD-1001)
   const [rows, setRows] = useState<ProductRowItem[]>([
     {
       id: 'row-1',
-      product_code: 'PRD-1001',
       product_name: '',
       company_id: '',
       category_id: '',
@@ -64,17 +61,20 @@ export default function AddMultipleProductsPage() {
 
   // Ref map to store DOM focusable elements: key is `${rowIndex}-${colIndex}`
   // Column Index Mapping:
-  // 0: product_code
-  // 1: product_name
-  // 2: company
-  // 3: category
-  // 4: mrp
-  // 5: selling_price
+  // 0: product_name
+  // 1: company
+  // 2: category
+  // 3: mrp
+  // 4: selling_price
   const inputRefs = useRef<Map<string, HTMLElement>>(new Map());
-  const pendingFocusTarget = useRef<{ rowIndex: number; colIndex: number } | null>({
-    rowIndex: 0,
-    colIndex: 1, // product_name initially
-  });
+
+const pendingFocusTarget = useRef<{
+  rowIndex: number;
+  colIndex: number;
+} | null>({
+  rowIndex: 0,
+  colIndex: 0,
+});
 
   // Focus a specific field in the grid
   const focusField = useCallback((rowIndex: number, colIndex: number) => {
@@ -102,42 +102,32 @@ export default function AddMultipleProductsPage() {
 
   // Initialize data from Supabase
   useEffect(() => {
-    let isMounted = true;
-    Promise.all([getStoredProducts(), getStoredCompanies(), getStoredCategories()])
-      .then(([existingProducts, comps, cats]) => {
-        if (!isMounted) return;
-        setCompanies(comps);
-        setCategories(cats);
-        setBaseProductCount(existingProducts.length);
+  let isMounted = true;
+
+  Promise.all([
+    getStoredCompanies(),
+    getStoredCategories(),
+  ])
+    .then(([comps, cats]) => {
+      if (!isMounted) return;
+
+      setCompanies(comps);
+      setCategories(cats);
+      setIsLoadingDropdowns(false);
+
+    })
+    .catch((err) => {
+      console.error('Error initializing add product page:', err);
+
+      if (isMounted) {
         setIsLoadingDropdowns(false);
+      }
+    });
 
-        // Product code starts from PRD-1001 and increments +1
-        const initialCode = `PRD-${1001 + existingProducts.length}`;
-        rowIdCounter.current += 1;
-        setRows([
-          {
-            id: `row-${rowIdCounter.current}`,
-            product_code: initialCode,
-            product_name: '',
-            company_id: '',
-            category_id: '',
-            mrp: '',
-            selling_price: '',
-          },
-        ]);
-
-        // Trigger focus on first product_name
-        pendingFocusTarget.current = { rowIndex: 0, colIndex: 1 };
-      })
-      .catch((err) => {
-        console.error('Error initializing add product page:', err);
-        if (isMounted) setIsLoadingDropdowns(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  return () => {
+    isMounted = false;
+  };
+}, []);
 
   // Execute pending focus whenever rows update
   useEffect(() => {
@@ -166,25 +156,28 @@ export default function AddMultipleProductsPage() {
 
   // Add a new product row (PRD-1001 + 1 on every new one)
   const handleAddRow = (shouldFocus = true) => {
-    const nextRowIndex = rows.length;
-    const nextCodeNumber = 1001 + baseProductCount + nextRowIndex;
-    rowIdCounter.current += 1;
-    const newRow: ProductRowItem = {
-      id: `row-${rowIdCounter.current}`,
-      product_code: `PRD-${nextCodeNumber}`,
-      product_name: '',
-      company_id: '',
-      category_id: '',
-      mrp: '',
-      selling_price: '',
-    };
+  const nextRowIndex = rows.length;
 
-    if (shouldFocus) {
-      pendingFocusTarget.current = { rowIndex: nextRowIndex, colIndex: 1 }; // Focus product_name
-    }
+  rowIdCounter.current += 1;
 
-    setRows((prev) => [...prev, newRow]);
+  const newRow: ProductRowItem = {
+    id: `row-${rowIdCounter.current}`,
+    product_name: '',
+    company_id: '',
+    category_id: '',
+    mrp: '',
+    selling_price: '',
   };
+
+  if (shouldFocus) {
+    pendingFocusTarget.current = {
+      rowIndex: nextRowIndex,
+      colIndex: 0,
+    };
+  }
+
+  setRows((prev) => [...prev, newRow]);
+};
 
   // Remove a product row
   const handleRemoveRow = (indexToRemove: number) => {
@@ -193,79 +186,75 @@ export default function AddMultipleProductsPage() {
   };
 
   // Handle Keyboard Navigation for Inputs
-  const handleInputKeyDown = (
-    e: React.KeyboardEvent<HTMLInputElement>,
-    rowIndex: number,
-    colIndex: number
-  ) => {
-    // Enter Key Navigation
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (colIndex === 5) {
-        // Last field (S.P) -> Add new product row and focus at product name
-        if (rowIndex === rows.length - 1) {
-          handleAddRow(true);
-        } else {
-          focusField(rowIndex + 1, 1);
-        }
+const handleInputKeyDown = (
+  e: React.KeyboardEvent<HTMLInputElement>,
+  rowIndex: number,
+  colIndex: number
+) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+
+    if (colIndex === 4) {
+      if (rowIndex === rows.length - 1) {
+        handleAddRow(true);
       } else {
-        // Move to next input
-        focusField(rowIndex, colIndex + 1);
+        focusField(rowIndex + 1, 0);
       }
-      return;
+    } else {
+      focusField(rowIndex, colIndex + 1);
     }
 
-    // Right Arrow Key Navigation
-    if (e.key === 'ArrowRight') {
-      const input = e.currentTarget;
-      const isAtEnd =
-        input.selectionStart === null ||
-        input.selectionStart === input.value.length;
-      if (isAtEnd) {
-        if (colIndex < 5) {
-          e.preventDefault();
-          focusField(rowIndex, colIndex + 1);
-        } else if (rowIndex < rows.length - 1) {
-          e.preventDefault();
-          focusField(rowIndex + 1, 0);
-        }
-      }
-      return;
+    return;
+  }
+
+  if (e.key === 'ArrowRight') {
+    const input = e.currentTarget;
+
+    const isAtEnd =
+      input.selectionStart === null ||
+      input.selectionStart === input.value.length;
+
+    if (isAtEnd && colIndex < 4) {
+      e.preventDefault();
+      focusField(rowIndex, colIndex + 1);
     }
 
-    // Left Arrow Key Navigation
-    if (e.key === 'ArrowLeft') {
-      const input = e.currentTarget;
-      const isAtStart =
-        input.selectionStart === 0 && input.selectionEnd === 0;
-      if (isAtStart) {
-        if (colIndex > 0) {
-          e.preventDefault();
-          focusField(rowIndex, colIndex - 1);
-        } else if (rowIndex > 0) {
-          e.preventDefault();
-          focusField(rowIndex - 1, 5);
-        }
-      }
-      return;
-    }
+    return;
+  }
 
-    // Down Arrow (Vertical Navigation across rows)
-    if (e.key === 'ArrowDown') {
-      if (rowIndex < rows.length - 1) {
+  if (e.key === 'ArrowLeft') {
+    const input = e.currentTarget;
+
+    const isAtStart =
+  input.selectionStart === null ||
+  (
+    input.selectionStart === 0 &&
+    input.selectionEnd === 0
+  );
+
+    if (isAtStart) {
+      if (colIndex > 0) {
         e.preventDefault();
-        focusField(rowIndex + 1, colIndex);
+        focusField(rowIndex, colIndex - 1);
+      } else if (rowIndex > 0) {
+        e.preventDefault();
+        focusField(rowIndex - 1, 4);
       }
     }
 
-    // Up Arrow (Vertical Navigation across rows)
-    if (e.key === 'ArrowUp') {
-      if (rowIndex > 0) {
-        e.preventDefault();
-        focusField(rowIndex - 1, colIndex);
-      }
-    }
-  };
+    return;
+  }
+
+  if (e.key === 'ArrowDown' && rowIndex < rows.length - 1) {
+    e.preventDefault();
+    focusField(rowIndex + 1, colIndex);
+  }
+
+  if (e.key === 'ArrowUp' && rowIndex > 0) {
+    e.preventDefault();
+    focusField(rowIndex - 1, colIndex);
+  }
+};
 
   // Keyboard navigation for Company Dropdown
   const handleCompanyKeyDown = (
@@ -288,7 +277,7 @@ export default function AddMultipleProductsPage() {
           updateRowField(rowIndex, 'company_id', companies[highlightedIndex].id);
         }
         setOpenDropdown(null);
-        focusField(rowIndex, 3); // Move to Category
+        focusField(rowIndex, 2); // Move to Category
       }
       return;
     }
@@ -322,14 +311,14 @@ export default function AddMultipleProductsPage() {
     if (e.key === 'ArrowRight') {
       e.preventDefault();
       setOpenDropdown(null);
-      focusField(rowIndex, 3); // Move to Category
+      focusField(rowIndex, 2); // Move to Category
       return;
     }
 
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
       setOpenDropdown(null);
-      focusField(rowIndex, 1); // Move to Product Name
+      focusField(rowIndex, 0); // Move to Product Name
       return;
     }
   };
@@ -355,7 +344,7 @@ export default function AddMultipleProductsPage() {
           updateRowField(rowIndex, 'category_id', categories[highlightedIndex].id);
         }
         setOpenDropdown(null);
-        focusField(rowIndex, 4); // Move to MRP
+        focusField(rowIndex, 3); // Move to MRP
       }
       return;
     }
@@ -389,92 +378,81 @@ export default function AddMultipleProductsPage() {
     if (e.key === 'ArrowRight') {
       e.preventDefault();
       setOpenDropdown(null);
-      focusField(rowIndex, 4); // Move to MRP
+      focusField(rowIndex, 3); // Move to MRP
       return;
     }
 
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
       setOpenDropdown(null);
-      focusField(rowIndex, 2); // Move to Company
+      focusField(rowIndex, 1); // Move to Company
       return;
     }
   };
 
   // Submit and Insert all products
   const handleConfirmProducts = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
+  e.preventDefault();
 
-    // Validation
-    const invalidRows: string[] = [];
-    const productCodes = new Set<string>();
+  setError('');
+  setSuccess('');
 
-    const payload = rows.map((row, idx) => {
-      const rowNum = idx + 1;
-      const code = row.product_code.trim();
-      const name = row.product_name.trim();
+  const invalidRows: string[] = [];
 
-      if (!code) {
-        invalidRows.push(`Row #${rowNum}: Product Code is required.`);
-      } else if (productCodes.has(code.toLowerCase())) {
-        invalidRows.push(`Row #${rowNum}: Duplicate Product Code "${code}".`);
-      } else {
-        productCodes.add(code.toLowerCase());
-      }
+  const payload = rows.map((row, idx) => {
+    const rowNum = idx + 1;
+    const name = row.product_name.trim();
 
-      if (!name) {
-        invalidRows.push(`Row #${rowNum}: Product Name is required.`);
-      }
-
-      return {
-        product_code: code,
-        barcode: null,
-        name: name,
-        company_id: row.company_id || null,
-        category_id: row.category_id || null,
-        purchase_price: 0,
-        selling_price: Number(row.selling_price) || 0,
-        mrp: Number(row.mrp) || 0,
-        ad_disc: 0,
-        current_stock: 0,
-        low_stock: 10,
-        unit: 'pcs',
-        status: true,
-      };
-    });
-
-    if (invalidRows.length > 0) {
-      setError(invalidRows[0]);
-      return;
+    if (!name) {
+      invalidRows.push(`Row #${rowNum}: Product Name is required.`);
     }
 
-    setIsSubmitting(true);
-    try {
-      const inserted = await addMultipleProducts(payload);
-      const insertedCount = inserted.length || payload.length;
+    return {
+      barcode: null,
+      name,
+      company_id: row.company_id || null,
+      category_id: row.category_id || null,
+      purchase_price: 0,
+      selling_price: Number(row.selling_price) || 0,
+      mrp: Number(row.mrp) || 0,
+      ad_disc: 0,
+      current_stock: 0,
+      low_stock: 10,
+      unit: 'pcs',
+      status: true,
+    };
+  });
 
-      setSuccess(
-        `Successfully inserted ${insertedCount} product${
-          insertedCount > 1 ? 's' : ''
-        } into database! Redirecting...`
-      );
+  if (invalidRows.length > 0) {
+    setError(invalidRows[0]);
+    return;
+  }
 
-      setTimeout(() => {
-        router.push('/admin/products/dashboard');
-      }, 900);
-    } catch (err: unknown) {
-      console.error('Failed to insert products:', err);
-      const msg =
-        err instanceof Error
-          ? err.message
-          : 'Failed to insert products into Supabase.';
-      setError(msg);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  setIsSubmitting(true);
+
+  try {
+    const inserted = await addMultipleProducts(payload);
+
+    setSuccess(
+      `Successfully inserted ${inserted.length} products into database! Redirecting...`
+    );
+
+    setTimeout(() => {
+      router.push('/admin/products/dashboard');
+    }, 900);
+  } catch (err: unknown) {
+    console.error('Failed to insert products:', err);
+
+    const msg =
+      err instanceof Error
+        ? err.message
+        : 'Failed to insert products into Supabase.';
+
+    setError(msg);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
@@ -569,10 +547,9 @@ export default function AddMultipleProductsPage() {
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/50 text-[11px] font-bold uppercase tracking-wider text-slate-600">
                       <th className="py-3 px-3 w-10 text-center">#</th>
-                      <th className="py-3 px-3 w-36">Product Code *</th>
                       <th className="py-3 px-3 min-w-[220px]">Product Name *</th>
-                      <th className="py-3 px-3 w-48">Company *</th>
-                      <th className="py-3 px-3 w-48">Category *</th>
+                      <th className="py-3 px-3 w-48">Company</th>
+                      <th className="py-3 px-3 w-48">Category</th>
                       <th className="py-3 px-3 w-28">MRP (₹)</th>
                       <th className="py-3 px-3 w-28">S.P (₹)</th>
                       <th className="py-3 px-3 w-12 text-center"></th>
@@ -595,7 +572,8 @@ export default function AddMultipleProductsPage() {
                             {rowIndex + 1}
                           </td>
 
-                          {/* Product Code (Col 0) */}
+
+                          {/* Product Name (Col 0) */}
                           <td className="py-2.5 px-3">
                             <input
                               ref={(el) => {
@@ -604,30 +582,11 @@ export default function AddMultipleProductsPage() {
                               }}
                               type="text"
                               required
-                              value={row.product_code}
-                              onChange={(e) =>
-                                updateRowField(rowIndex, 'product_code', e.target.value)
-                              }
-                              onKeyDown={(e) => handleInputKeyDown(e, rowIndex, 0)}
-                              className="w-full h-10 px-3 rounded-lg border border-slate-300 bg-white text-slate-900 font-mono text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
-                              placeholder="PRD-1001"
-                            />
-                          </td>
-
-                          {/* Product Name (Col 1) */}
-                          <td className="py-2.5 px-3">
-                            <input
-                              ref={(el) => {
-                                if (el) inputRefs.current.set(`${rowIndex}-1`, el);
-                                else inputRefs.current.delete(`${rowIndex}-1`);
-                              }}
-                              type="text"
-                              required
                               value={row.product_name}
                               onChange={(e) =>
                                 updateRowField(rowIndex, 'product_name', e.target.value)
                               }
-                              onKeyDown={(e) => handleInputKeyDown(e, rowIndex, 1)}
+                              onKeyDown={(e) => handleInputKeyDown(e, rowIndex, 0)}
                               className="w-full h-10 px-3 rounded-lg border border-slate-300 bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-700/80 focus:border-amber-700 transition-all"
                               placeholder="e.g. Milton bottle"
                             />
@@ -637,8 +596,8 @@ export default function AddMultipleProductsPage() {
                           <td className="py-2.5 px-3 relative" data-dropdown-container>
                             <button
                               ref={(el) => {
-                                if (el) inputRefs.current.set(`${rowIndex}-2`, el);
-                                else inputRefs.current.delete(`${rowIndex}-2`);
+                                if (el) inputRefs.current.set(`${rowIndex}-1`, el);
+                                else inputRefs.current.delete(`${rowIndex}-1`);
                               }}
                               type="button"
                               onClick={() => {
@@ -678,7 +637,7 @@ export default function AddMultipleProductsPage() {
                                       onClick={() => {
                                         updateRowField(rowIndex, 'company_id', comp.id);
                                         setOpenDropdown(null);
-                                        focusField(rowIndex, 3); // Move to category
+                                        focusField(rowIndex, 2); // Move to category
                                       }}
                                       onMouseEnter={() => setHighlightedIndex(cIdx)}
                                       className={`px-3 py-2.5 text-xs cursor-pointer flex items-center justify-between transition-colors ${
@@ -702,8 +661,8 @@ export default function AddMultipleProductsPage() {
                           <td className="py-2.5 px-3 relative" data-dropdown-container>
                             <button
                               ref={(el) => {
-                                if (el) inputRefs.current.set(`${rowIndex}-3`, el);
-                                else inputRefs.current.delete(`${rowIndex}-3`);
+                                if (el) inputRefs.current.set(`${rowIndex}-2`, el);
+                                else inputRefs.current.delete(`${rowIndex}-2`);
                               }}
                               type="button"
                               onClick={() => {
@@ -743,7 +702,7 @@ export default function AddMultipleProductsPage() {
                                       onClick={() => {
                                         updateRowField(rowIndex, 'category_id', cat.id);
                                         setOpenDropdown(null);
-                                        focusField(rowIndex, 4); // Move to MRP
+                                        focusField(rowIndex, 3); // Move to MRP
                                       }}
                                       onMouseEnter={() => setHighlightedIndex(catIdx)}
                                       className={`px-3 py-2.5 text-xs cursor-pointer flex items-center justify-between transition-colors ${
@@ -767,8 +726,8 @@ export default function AddMultipleProductsPage() {
                           <td className="py-2.5 px-3">
                             <input
                               ref={(el) => {
-                                if (el) inputRefs.current.set(`${rowIndex}-4`, el);
-                                else inputRefs.current.delete(`${rowIndex}-4`);
+                                if (el) inputRefs.current.set(`${rowIndex}-3`, el);
+                                else inputRefs.current.delete(`${rowIndex}-3`);
                               }}
                               type="number"
                               step="0.01"
@@ -777,7 +736,7 @@ export default function AddMultipleProductsPage() {
                               onChange={(e) =>
                                 updateRowField(rowIndex, 'mrp', e.target.value)
                               }
-                              onKeyDown={(e) => handleInputKeyDown(e, rowIndex, 4)}
+                              onKeyDown={(e) => handleInputKeyDown(e, rowIndex, 3)}
                               className="w-full h-10 px-3 rounded-lg border border-slate-300 bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all text-right"
                               placeholder="0.00"
                             />
@@ -787,8 +746,8 @@ export default function AddMultipleProductsPage() {
                           <td className="py-2.5 px-3">
                             <input
                               ref={(el) => {
-                                if (el) inputRefs.current.set(`${rowIndex}-5`, el);
-                                else inputRefs.current.delete(`${rowIndex}-5`);
+                                if (el) inputRefs.current.set(`${rowIndex}-4`, el);
+                                else inputRefs.current.delete(`${rowIndex}-4`);
                               }}
                               type="number"
                               step="0.01"
@@ -797,7 +756,7 @@ export default function AddMultipleProductsPage() {
                               onChange={(e) =>
                                 updateRowField(rowIndex, 'selling_price', e.target.value)
                               }
-                              onKeyDown={(e) => handleInputKeyDown(e, rowIndex, 5)}
+                              onKeyDown={(e) => handleInputKeyDown(e, rowIndex, 4)}
                               className="w-full h-10 px-3 rounded-lg border border-slate-300 bg-white text-slate-900 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all text-right"
                               placeholder="0.00"
                             />
